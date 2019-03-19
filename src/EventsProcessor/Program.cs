@@ -1,21 +1,17 @@
-﻿using Microsoft.Azure.WebJobs;
+﻿using Microsoft.AspNetCore;
+using Microsoft.AspNetCore.Hosting;
 
 namespace Bit.EventsProcessor
 {
     public class Program
     {
-        private static void Main()
+        public static void Main(string[] args)
         {
-            var config = new JobHostConfiguration();
-            if(config.IsDevelopment)
-            {
-                config.UseDevelopmentSettings();
-            }
-
-            config.Queues.BatchSize = 5;
-
-            var host = new JobHost(config);
-            host.RunAndBlock();
+            WebHost
+                .CreateDefaultBuilder(args)
+                .UseStartup<Startup>()
+                .Build()
+                .Run();
         }
     }
 }

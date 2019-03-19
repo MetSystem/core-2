@@ -10,8 +10,8 @@ namespace Bit.Core.Services
 {
     public interface IOrganizationService
     {
-        Task ReplacePaymentMethodAsync(Guid organizationId, string paymentToken);
-        Task CancelSubscriptionAsync(Guid organizationId, bool endOfPeriod = false);
+        Task ReplacePaymentMethodAsync(Guid organizationId, string paymentToken, PaymentMethodType paymentMethodType);
+        Task CancelSubscriptionAsync(Guid organizationId, bool? endOfPeriod = null);
         Task ReinstateSubscriptionAsync(Guid organizationId);
         Task UpgradePlanAsync(Guid organizationId, PlanType plan, int additionalSeats);
         Task AdjustStorageAsync(Guid organizationId, short storageAdjustmentGb);
@@ -35,7 +35,7 @@ namespace Bit.Core.Services
         Task ResendInviteAsync(Guid organizationId, Guid invitingUserId, Guid organizationUserId);
         Task<OrganizationUser> AcceptUserAsync(Guid organizationUserId, User user, string token);
         Task<OrganizationUser> ConfirmUserAsync(Guid organizationId, Guid organizationUserId, string key, Guid confirmingUserId);
-        Task SaveUserAsync(OrganizationUser user, Guid savingUserId, IEnumerable<SelectionReadOnly> collections);
+        Task SaveUserAsync(OrganizationUser user, Guid? savingUserId, IEnumerable<SelectionReadOnly> collections);
         Task DeleteUserAsync(Guid organizationId, Guid organizationUserId, Guid? deletingUserId);
         Task DeleteUserAsync(Guid organizationId, Guid userId);
         Task UpdateUserGroupsAsync(OrganizationUser organizationUser, IEnumerable<Guid> groupIds);
@@ -43,5 +43,6 @@ namespace Bit.Core.Services
         Task<OrganizationLicense> GenerateLicenseAsync(Organization organization, Guid installationId);
         Task ImportAsync(Guid organizationId, Guid importingUserId, IEnumerable<ImportedGroup> groups,
             IEnumerable<ImportedOrganizationUser> newUsers, IEnumerable<string> removeUserExternalIds);
+        Task RotateApiKeyAsync(Organization organization);
     }
 }

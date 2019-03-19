@@ -12,20 +12,22 @@ namespace Bit.Core
 {
     public class CurrentContext
     {
+        private const string CloudFlareConnectingIp = "CF-Connecting-IP";
+
         private bool _builtHttpContext;
         private bool _builtClaimsPrincipal;
-        private string _ip;
 
         public virtual HttpContext HttpContext { get; set; }
         public virtual Guid? UserId { get; set; }
         public virtual User User { get; set; }
         public virtual string DeviceIdentifier { get; set; }
         public virtual DeviceType? DeviceType { get; set; }
-        public virtual string IpAddress => GetRequestIp();
+        public virtual string IpAddress { get; set; }
         public virtual List<CurrentContentOrganization> Organizations { get; set; }
         public virtual Guid? InstallationId { get; set; }
+        public virtual Guid? OrganizationId { get; set; }
 
-        public void Build(HttpContext httpContext)
+        public void Build(HttpContext httpContext, GlobalSettings globalSettings)
         {
             if(_builtHttpContext)
             {
@@ -34,7 +36,7 @@ namespace Bit.Core
 
             _builtHttpContext = true;
             HttpContext = httpContext;
-            Build(httpContext.User);
+            Build(httpContext.User, globalSettings);
 
             if(DeviceIdentifier == null && httpContext.Request.Headers.ContainsKey("Device-Identifier"))
             {
@@ -48,7 +50,7 @@ namespace Bit.Core
             }
         }
 
-        public void Build(ClaimsPrincipal user)
+        public void Build(ClaimsPrincipal user, GlobalSettings globalSettings)
         {
             if(_builtClaimsPrincipal)
             {
@@ -56,6 +58,7 @@ namespace Bit.Core
             }
 
             _builtClaimsPrincipal = true;
+            IpAddress = GetRequestIp(globalSettings);
             if(user == null || !user.Claims.Any())
             {
                 return;
@@ -71,11 +74,21 @@ namespace Bit.Core
 
             var clientId = GetClaimValue(claimsDict, "client_id");
             var clientSubject = GetClaimValue(claimsDict, "client_sub");
-            if((clientId?.StartsWith("installation.") ?? false) && clientSubject != null)
+            if(clientSubject != null)
             {
-                if(Guid.TryParse(clientSubject, out var idGuid))
+                if(clientId?.StartsWith("installation.") ?? false)
                 {
-                    InstallationId = idGuid;
+                    if(Guid.TryParse(clientSubject, out var idGuid))
+                    {
+                        InstallationId = idGuid;
+                    }
+                }
+                else if(clientId?.StartsWith("organization.") ?? false)
+                {
+                    if(Guid.TryParse(clientSubject, out var idGuid))
+                    {
+                        OrganizationId = idGuid;
+                    }
                 }
             }
 
@@ -111,11 +124,28 @@ namespace Bit.Core
                         Type = OrganizationUserType.User
                     }));
             }
+
+            if(claimsDict.ContainsKey("orgmanager"))
+            {
+                Organizations.AddRange(claimsDict["orgmanager"].Select(c =>
+                    new CurrentContentOrganization
+                    {
+                        Id = new Guid(c.Value),
+                        Type = OrganizationUserType.Manager
+                    }));
+            }
         }
 
         public bool OrganizationUser(Guid orgId)
         {
             return Organizations?.Any(o => o.Id == orgId) ?? false;
+        }
+
+        public bool OrganizationManager(Guid orgId)
+        {
+            return Organizations?.Any(o => o.Id == orgId &&
+                (o.Type == OrganizationUserType.Owner || o.Type == OrganizationUserType.Admin ||
+                    o.Type == OrganizationUserType.Manager)) ?? false;
         }
 
         public bool OrganizationAdmin(Guid orgId)
@@ -141,24 +171,19 @@ namespace Bit.Core
             return Organizations;
         }
 
-        private string GetRequestIp()
+        private string GetRequestIp(GlobalSettings globalSettings)
         {
-            if(!string.IsNullOrWhiteSpace(_ip))
-            {
-                return _ip;
-            }
-
             if(HttpContext == null)
             {
                 return null;
             }
 
-            if(string.IsNullOrWhiteSpace(_ip))
+            if(!globalSettings.SelfHosted && HttpContext.Request.Headers.ContainsKey(CloudFlareConnectingIp))
             {
-                _ip = HttpContext.Connection?.RemoteIpAddress?.ToString();
+                return HttpContext.Request.Headers[CloudFlareConnectingIp].ToString();
             }
 
-            return _ip;
+            return HttpContext.Connection?.RemoteIpAddress?.ToString();
         }
 
         private string GetClaimValue(Dictionary<string, IEnumerable<Claim>> claims, string type)

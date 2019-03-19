@@ -13,11 +13,11 @@ namespace Bit.Core.Repositories.SqlServer
     public class UserRepository : Repository<User, Guid>, IUserRepository
     {
         public UserRepository(GlobalSettings globalSettings)
-            : this(globalSettings.SqlServer.ConnectionString)
+            : this(globalSettings.SqlServer.ConnectionString, globalSettings.SqlServer.ReadOnlyConnectionString)
         { }
 
-        public UserRepository(string connectionString)
-            : base(connectionString)
+        public UserRepository(string connectionString, string readOnlyConnectionString)
+            : base(connectionString, readOnlyConnectionString)
         { }
 
         public override async Task<User> GetByIdAsync(Guid id)
@@ -53,12 +53,13 @@ namespace Bit.Core.Repositories.SqlServer
 
         public async Task<ICollection<User>> SearchAsync(string email, int skip, int take)
         {
-            using(var connection = new SqlConnection(ConnectionString))
+            using(var connection = new SqlConnection(ReadOnlyConnectionString))
             {
                 var results = await connection.QueryAsync<User>(
                     $"[{Schema}].[{Table}_Search]",
                     new { Email = email, Skip = skip, Take = take },
-                    commandType: CommandType.StoredProcedure);
+                    commandType: CommandType.StoredProcedure,
+                    commandTimeout: 120);
 
                 return results.ToList();
             }
@@ -71,18 +72,6 @@ namespace Bit.Core.Repositories.SqlServer
                 var results = await connection.QueryAsync<User>(
                     "[dbo].[User_ReadByPremium]",
                     new { Premium = premium },
-                    commandType: CommandType.StoredProcedure);
-
-                return results.ToList();
-            }
-        }
-
-        public async Task<ICollection<User>> GetManyByPremiumRenewalAsync()
-        {
-            using(var connection = new SqlConnection(ConnectionString))
-            {
-                var results = await connection.QueryAsync<User>(
-                    "[dbo].[User_ReadByPremiumRenewal]",
                     commandType: CommandType.StoredProcedure);
 
                 return results.ToList();

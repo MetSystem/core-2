@@ -13,7 +13,6 @@ using Serilog.Events;
 using Stripe;
 using Bit.Core.Utilities;
 using IdentityModel;
-using jsreport.AspNetCore;
 using Microsoft.AspNetCore.HttpOverrides;
 
 namespace Bit.Api
@@ -38,7 +37,6 @@ namespace Bit.Api
 
             // Settings
             var globalSettings = services.AddGlobalSettingsServices(Configuration);
-            services.Configure<ApiSettings>(Configuration.GetSection("apiSettings"));
             if(!globalSettings.SelfHosted)
             {
                 services.Configure<IpRateLimitOptions>(Configuration.GetSection("IpRateLimitOptions"));
@@ -65,6 +63,8 @@ namespace Bit.Api
                 // Rate limiting
                 services.AddSingleton<IIpPolicyStore, MemoryCacheIpPolicyStore>();
                 services.AddSingleton<IRateLimitCounterStore, MemoryCacheRateLimitCounterStore>();
+                // BitPay
+                services.AddSingleton<BitPayClient>();
             }
 
             // Identity
@@ -94,6 +94,11 @@ namespace Bit.Api
                     policy.RequireAuthenticatedUser();
                     policy.RequireClaim(JwtClaimTypes.Scope, "api.licensing");
                 });
+                config.AddPolicy("Organization", policy =>
+                {
+                    policy.RequireAuthenticatedUser();
+                    policy.RequireClaim(JwtClaimTypes.Scope, "api.organization");
+                });
             });
 
             services.AddScoped<AuthenticatorTokenProvider>();
@@ -105,23 +110,23 @@ namespace Bit.Api
             // MVC
             services.AddMvc(config =>
             {
-                config.Filters.Add(new ExceptionHandlerFilterAttribute());
-                config.Filters.Add(new ModelStateValidationFilterAttribute());
-            }).AddJsonOptions(o => o.SerializerSettings.ContractResolver = new DefaultContractResolver());
+                config.Conventions.Add(new ApiExplorerGroupConvention());
+                config.Conventions.Add(new PublicApiControllersModelConvention());
+            }).AddJsonOptions(options =>
+            {
+                if(Environment.IsProduction() && Configuration["swaggerGen"] != "true")
+                {
+                    options.SerializerSettings.ContractResolver = new DefaultContractResolver();
+                }
+            });
+
+            services.AddSwagger(globalSettings);
 
             if(globalSettings.SelfHosted)
             {
                 // Jobs service
                 Jobs.JobsHostedService.AddJobsServices(services);
                 services.AddHostedService<Jobs.JobsHostedService>();
-            }
-            else
-            {
-                // PDF generation
-                services.AddJsReport(new jsreport.Local.LocalReporting()
-                    .UseBinary(jsreport.Binary.JsReportBinary.GetBinary())
-                    .AsUtility()
-                    .Create());
             }
         }
 
@@ -185,6 +190,27 @@ namespace Bit.Api
 
             // Add MVC to the request pipeline.
             app.UseMvc();
+
+            // Add Swagger
+            if(Environment.IsDevelopment() || globalSettings.SelfHosted)
+            {
+                app.UseSwagger(config =>
+                {
+                    config.RouteTemplate = "specs/{documentName}/swagger.json";
+                    var host = globalSettings.BaseServiceUri.Api.Replace("https://", string.Empty)
+                        .Replace("http://", string.Empty);
+                    config.PreSerializeFilters.Add((swaggerDoc, httpReq) => swaggerDoc.Host = host);
+                });
+                app.UseSwaggerUI(config =>
+                {
+                    config.DocumentTitle = "Bitwarden API Documentation";
+                    config.RoutePrefix = "docs";
+                    config.SwaggerEndpoint($"{globalSettings.BaseServiceUri.Api}/specs/public/swagger.json",
+                        "Bitwarden Public API");
+                    config.OAuthClientId("accountType.id");
+                    config.OAuthClientSecret("secretKey");
+                });
+            }
         }
     }
 }

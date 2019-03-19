@@ -36,6 +36,7 @@
     <DefineTrace>true</DefineTrace>
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
+    <SuppressTSqlWarnings>71502</SuppressTSqlWarnings>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <OutputPath>bin\Debug\</OutputPath>
@@ -48,6 +49,7 @@
     <DefineTrace>true</DefineTrace>
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
+    <SuppressTSqlWarnings>71502</SuppressTSqlWarnings>
   </PropertyGroup>
   <PropertyGroup>
     <VisualStudioVersion Condition="'$(VisualStudioVersion)' == ''">12.0</VisualStudioVersion>
@@ -153,7 +155,6 @@
     <Build Include="dbo\Stored Procedures\Device_ReadByUserId.sql" />
     <Build Include="dbo\Stored Procedures\Device_Update.sql" />
     <Build Include="dbo\Stored Procedures\User_Create.sql" />
-    <Build Include="dbo\Stored Procedures\Collection_CreateWithGroups.sql" />
     <Build Include="dbo\Stored Procedures\User_DeleteById.sql" />
     <Build Include="dbo\Stored Procedures\Collection_ReadWithGroupsById.sql" />
     <Build Include="dbo\Stored Procedures\User_ReadByEmail.sql" />
@@ -161,7 +162,7 @@
     <Build Include="dbo\Stored Procedures\User_ReadById.sql" />
     <Build Include="dbo\Stored Procedures\CollectionUser_Delete.sql" />
     <Build Include="dbo\Stored Procedures\User_Update.sql" />
-    <Build Include="dbo\Stored Procedures\CollectionUserDetails_ReadByCollectionId.sql" />
+    <Build Include="dbo\Stored Procedures\CollectionUser_ReadByCollectionId.sql" />
     <Build Include="dbo\Stored Procedures\Group_Create.sql" />
     <Build Include="dbo\Stored Procedures\Group_CreateWithCollections.sql" />
     <Build Include="dbo\Stored Procedures\Group_DeleteById.sql" />
@@ -175,7 +176,6 @@
     <Build Include="dbo\Stored Procedures\GroupUser_ReadGroupIdsByOrganizationUserId.sql" />
     <Build Include="dbo\Stored Procedures\GroupUser_UpdateGroups.sql" />
     <Build Include="dbo\Stored Procedures\GroupUser_UpdateUsers.sql" />
-    <Build Include="dbo\Stored Procedures\GroupUserDetails_ReadByGroupId.sql" />
     <Build Include="dbo\Stored Procedures\OrganizationUser_CreateWithCollections.sql" />
     <Build Include="dbo\Stored Procedures\OrganizationUser_ReadWithCollectionsById.sql" />
     <Build Include="dbo\Stored Procedures\OrganizationUser_UpdateWithCollections.sql" />
@@ -226,10 +226,31 @@
     <Build Include="dbo\Stored Procedures\OrganizationUser_ReadCountByOrganizationIdEmail.sql" />
     <Build Include="dbo\Stored Procedures\CipherDetails_ReadWithoutOrganizationsByUserId.sql" />
     <Build Include="dbo\Stored Procedures\CollectionCipher_UpdateCollectionsForCiphers.sql" />
-    <Build Include="dbo\Stored Procedures\User_ReadByPremiumRenewal.sql" />
     <Build Include="dbo\Stored Procedures\User_UpdateRenewalReminderDate.sql" />
     <Build Include="dbo\Stored Procedures\Grant_DeleteExpired.sql" />
     <Build Include="dbo\Stored Procedures\U2f_DeleteOld.sql" />
     <Build Include="dbo\Stored Procedures\User_ReadKdfByEmail.sql" />
+    <Build Include="dbo\Stored Procedures\Cipher_DeleteByOrganizationId.sql" />
+    <Build Include="dbo\Stored Procedures\AzureSQLMaintenance.sql" />
+    <Build Include="dbo\Functions\UserCollectionDetails.sql" />
+    <Build Include="dbo\Stored Procedures\Collection_ReadByIdUserId.sql" />
+    <Build Include="dbo\Stored Procedures\Collection_ReadWithGroupsByIdUserId.sql" />
+    <Build Include="dbo\Stored Procedures\Collection_CreateWithGroups.sql" />
+    <Build Include="dbo\Stored Procedures\CollectionUser_UpdateUsers.sql" />
+    <Build Include="dbo\Stored Procedures\GroupUser_ReadOrganizationUserIdsByGroupId.sql" />
+    <Build Include="dbo\Stored Procedures\Cipher_CreateWithCollections.sql" />
+    <Build Include="dbo\Stored Procedures\Cipher_UpdateCollections.sql" />
+    <Build Include="dbo\Stored Procedures\CipherDetails_CreateWithCollections.sql" />
+    <Build Include="dbo\Tables\Transaction.sql" />
+    <Build Include="dbo\Stored Procedures\Transaction_Create.sql" />
+    <Build Include="dbo\Stored Procedures\Transaction_DeleteById.sql" />
+    <Build Include="dbo\Stored Procedures\Transaction_ReadById.sql" />
+    <Build Include="dbo\Stored Procedures\Transaction_ReadByOrganizationId.sql" />
+    <Build Include="dbo\Stored Procedures\Transaction_Update.sql" />
+    <Build Include="dbo\Views\TransactionView.sql" />
+    <Build Include="dbo\Stored Procedures\Transaction_ReadByUserId.sql" />
+    <Build Include="dbo\Stored Procedures\Transaction_ReadByGatewayId.sql" />
+    <Build Include="dbo\Stored Procedures\OrganizationUserUserDetails_ReadById.sql" />
+    <Build Include="dbo\Stored Procedures\OrganizationUserUserDetails_ReadWithCollectionsById.sql" />
   </ItemGroup>
 </Project>

@@ -12,6 +12,8 @@ using Bit.Core.Utilities;
 using Bit.Core;
 using Bit.Core.Models.Business;
 using Bit.Api.Utilities;
+using Bit.Core.Models.Table;
+using System.Collections.Generic;
 
 namespace Bit.Api.Controllers
 {
@@ -21,24 +23,33 @@ namespace Bit.Api.Controllers
     {
         private readonly IUserService _userService;
         private readonly IUserRepository _userRepository;
+        private readonly ICipherRepository _cipherRepository;
+        private readonly IFolderRepository _folderRepository;
         private readonly ICipherService _cipherService;
         private readonly IOrganizationUserRepository _organizationUserRepository;
         private readonly ILicensingService _licenseService;
+        private readonly IPaymentService _paymentService;
         private readonly GlobalSettings _globalSettings;
 
         public AccountsController(
             IUserService userService,
             IUserRepository userRepository,
+            ICipherRepository cipherRepository,
+            IFolderRepository folderRepository,
             ICipherService cipherService,
             IOrganizationUserRepository organizationUserRepository,
             ILicensingService licenseService,
+            IPaymentService paymentService,
             GlobalSettings globalSettings)
         {
             _userService = userService;
             _userRepository = userRepository;
+            _cipherRepository = cipherRepository;
+            _folderRepository = folderRepository;
             _cipherService = cipherService;
             _organizationUserRepository = organizationUserRepository;
             _licenseService = licenseService;
+            _paymentService = paymentService;
             _globalSettings = globalSettings;
         }
 
@@ -219,11 +230,27 @@ namespace Bit.Api.Controllers
                 throw new UnauthorizedAccessException();
             }
 
-            // NOTE: It is assumed that the eventual repository call will make sure the updated
-            // ciphers belong to user making this call. Therefore, no check is done here.
+            var existingCiphers = await _cipherRepository.GetManyByUserIdAsync(user.Id);
+            var ciphersDict = model.Ciphers?.ToDictionary(c => c.Id.Value);
+            var ciphers = new List<Cipher>();
+            if(existingCiphers.Any() && ciphersDict != null)
+            {
+                foreach(var cipher in existingCiphers.Where(c => ciphersDict.ContainsKey(c.Id)))
+                {
+                    ciphers.Add(ciphersDict[cipher.Id].ToCipher(cipher));
+                }
+            }
 
-            var ciphers = model.Ciphers.Select(c => c.ToCipher(user.Id));
-            var folders = model.Folders.Select(c => c.ToFolder(user.Id));
+            var existingFolders = await _folderRepository.GetManyByUserIdAsync(user.Id);
+            var foldersDict = model.Folders?.ToDictionary(f => f.Id);
+            var folders = new List<Folder>();
+            if(existingFolders.Any() && foldersDict != null)
+            {
+                foreach(var folder in existingFolders.Where(f => foldersDict.ContainsKey(f.Id)))
+                {
+                    folders.Add(foldersDict[folder.Id].ToFolder(folder));
+                }
+            }
 
             var result = await _userService.UpdateKeyAsync(
                 user,
@@ -283,7 +310,7 @@ namespace Bit.Api.Controllers
             var organizationUserDetails = await _organizationUserRepository.GetManyDetailsByUserAsync(user.Id,
                 OrganizationUserStatusType.Confirmed);
             var response = new ProfileResponseModel(user, organizationUserDetails,
-                await user.TwoFactorIsEnabledAsync(_userService));
+                await _userService.TwoFactorIsEnabledAsync(user));
             return response;
         }
 
@@ -308,7 +335,7 @@ namespace Bit.Api.Controllers
             }
 
             await _userService.SaveUserAsync(model.ToUser(user));
-            var response = new ProfileResponseModel(user, null, await user.TwoFactorIsEnabledAsync(_userService));
+            var response = new ProfileResponseModel(user, null, await _userService.TwoFactorIsEnabledAsync(user));
             return response;
         }
 
@@ -436,13 +463,27 @@ namespace Bit.Api.Controllers
                 throw new BadRequestException("Invalid license.");
             }
 
-            await _userService.SignUpPremiumAsync(user, model.PaymentToken,
+            await _userService.SignUpPremiumAsync(user, model.PaymentToken, model.PaymentMethodType.Value,
                 model.AdditionalStorageGb.GetValueOrDefault(0), license);
-            return new ProfileResponseModel(user, null, await user.TwoFactorIsEnabledAsync(_userService));
+            return new ProfileResponseModel(user, null, await _userService.TwoFactorIsEnabledAsync(user));
         }
 
         [HttpGet("billing")]
+        [SelfHosted(NotSelfHostedOnly = true)]
         public async Task<BillingResponseModel> GetBilling()
+        {
+            var user = await _userService.GetUserByPrincipalAsync(User);
+            if(user == null)
+            {
+                throw new UnauthorizedAccessException();
+            }
+
+            var billingInfo = await _paymentService.GetBillingAsync(user);
+            return new BillingResponseModel(billingInfo);
+        }
+
+        [HttpGet("subscription")]
+        public async Task<SubscriptionResponseModel> GetSubscription()
         {
             var user = await _userService.GetUserByPrincipalAsync(User);
             if(user == null)
@@ -452,19 +493,18 @@ namespace Bit.Api.Controllers
 
             if(!_globalSettings.SelfHosted && user.Gateway != null)
             {
-                var paymentService = user.GetPaymentService(_globalSettings);
-                var billingInfo = await paymentService.GetBillingAsync(user);
-                var license = await _userService.GenerateLicenseAsync(user, billingInfo);
-                return new BillingResponseModel(user, billingInfo, license);
+                var subscriptionInfo = await _paymentService.GetSubscriptionAsync(user);
+                var license = await _userService.GenerateLicenseAsync(user, subscriptionInfo);
+                return new SubscriptionResponseModel(user, subscriptionInfo, license);
             }
             else if(!_globalSettings.SelfHosted)
             {
                 var license = await _userService.GenerateLicenseAsync(user);
-                return new BillingResponseModel(user, license);
+                return new SubscriptionResponseModel(user, license);
             }
             else
             {
-                return new BillingResponseModel(user);
+                return new SubscriptionResponseModel(user);
             }
         }
 
@@ -478,7 +518,7 @@ namespace Bit.Api.Controllers
                 throw new UnauthorizedAccessException();
             }
 
-            await _userService.ReplacePaymentMethodAsync(user, model.PaymentToken);
+            await _userService.ReplacePaymentMethodAsync(user, model.PaymentToken, model.PaymentMethodType.Value);
         }
 
         [HttpPost("storage")]
@@ -523,7 +563,7 @@ namespace Bit.Api.Controllers
                 throw new UnauthorizedAccessException();
             }
 
-            await _userService.CancelPremiumAsync(user, true);
+            await _userService.CancelPremiumAsync(user);
         }
 
         [HttpPost("reinstate-premium")]

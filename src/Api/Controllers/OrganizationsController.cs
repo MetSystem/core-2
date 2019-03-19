@@ -10,11 +10,6 @@ using Bit.Core.Services;
 using Bit.Core;
 using Bit.Api.Utilities;
 using Bit.Core.Models.Business;
-using jsreport.AspNetCore;
-using jsreport.Types;
-using Bit.Api.Models;
-using Stripe;
-using Microsoft.Extensions.Options;
 using Bit.Core.Utilities;
 
 namespace Bit.Api.Controllers
@@ -27,26 +22,26 @@ namespace Bit.Api.Controllers
         private readonly IOrganizationUserRepository _organizationUserRepository;
         private readonly IOrganizationService _organizationService;
         private readonly IUserService _userService;
+        private readonly IPaymentService _paymentService;
         private readonly CurrentContext _currentContext;
         private readonly GlobalSettings _globalSettings;
-        private readonly ApiSettings _apiSettings;
 
         public OrganizationsController(
             IOrganizationRepository organizationRepository,
             IOrganizationUserRepository organizationUserRepository,
             IOrganizationService organizationService,
             IUserService userService,
+            IPaymentService paymentService,
             CurrentContext currentContext,
-            GlobalSettings globalSettings,
-            IOptions<ApiSettings> apiSettings)
+            GlobalSettings globalSettings)
         {
             _organizationRepository = organizationRepository;
             _organizationUserRepository = organizationUserRepository;
             _organizationService = organizationService;
             _userService = userService;
+            _paymentService = paymentService;
             _currentContext = currentContext;
             _globalSettings = globalSettings;
-            _apiSettings = apiSettings.Value;
         }
 
         [HttpGet("{id}")]
@@ -68,7 +63,27 @@ namespace Bit.Api.Controllers
         }
 
         [HttpGet("{id}/billing")]
-        public async Task<OrganizationBillingResponseModel> GetBilling(string id)
+        [SelfHosted(NotSelfHostedOnly = true)]
+        public async Task<BillingResponseModel> GetBilling(string id)
+        {
+            var orgIdGuid = new Guid(id);
+            if(!_currentContext.OrganizationOwner(orgIdGuid))
+            {
+                throw new NotFoundException();
+            }
+
+            var organization = await _organizationRepository.GetByIdAsync(orgIdGuid);
+            if(organization == null)
+            {
+                throw new NotFoundException();
+            }
+
+            var billingInfo = await _paymentService.GetBillingAsync(organization);
+            return new BillingResponseModel(billingInfo);
+        }
+
+        [HttpGet("{id}/subscription")]
+        public async Task<OrganizationSubscriptionResponseModel> GetSubscription(string id)
         {
             var orgIdGuid = new Guid(id);
             if(!_currentContext.OrganizationOwner(orgIdGuid))
@@ -84,54 +99,16 @@ namespace Bit.Api.Controllers
 
             if(!_globalSettings.SelfHosted && organization.Gateway != null)
             {
-                var paymentService = new StripePaymentService();
-                var billingInfo = await paymentService.GetBillingAsync(organization);
-                if(billingInfo == null)
+                var subscriptionInfo = await _paymentService.GetSubscriptionAsync(organization);
+                if(subscriptionInfo == null)
                 {
                     throw new NotFoundException();
                 }
-                return new OrganizationBillingResponseModel(organization, billingInfo);
+                return new OrganizationSubscriptionResponseModel(organization, subscriptionInfo);
             }
             else
             {
-                return new OrganizationBillingResponseModel(organization);
-            }
-        }
-
-        [HttpGet("{id}/billing-invoice/{invoiceId}")]
-        [SelfHosted(NotSelfHostedOnly = true)]
-        [MiddlewareFilter(typeof(JsReportPipeline))]
-        public async Task<IActionResult> GetBillingInvoice(string id, string invoiceId)
-        {
-            var orgIdGuid = new Guid(id);
-            if(!_currentContext.OrganizationOwner(orgIdGuid))
-            {
-                throw new NotFoundException();
-            }
-
-            var organization = await _organizationRepository.GetByIdAsync(orgIdGuid);
-            if(organization == null)
-            {
-                throw new NotFoundException();
-            }
-
-            try
-            {
-                var invoice = await new StripeInvoiceService().GetAsync(invoiceId);
-                if(invoice == null || invoice.CustomerId != organization.GatewayCustomerId)
-                {
-                    throw new NotFoundException();
-                }
-
-                var model = new InvoiceModel(organization, invoice, _apiSettings);
-                HttpContext.JsReportFeature().Recipe(Recipe.PhantomPdf)
-                    .OnAfterRender((r) => HttpContext.Response.Headers["Content-Disposition"] =
-                        $"attachment; filename=\"bitwarden_{model.InvoiceNumber}.pdf\"");
-                return View("Invoice", model);
-            }
-            catch(StripeException)
-            {
-                throw new NotFoundException();
+                return new OrganizationSubscriptionResponseModel(organization);
             }
         }
 
@@ -232,9 +209,10 @@ namespace Bit.Api.Controllers
                 throw new NotFoundException();
             }
 
-            await _organizationService.ReplacePaymentMethodAsync(orgIdGuid, model.PaymentToken);
+            await _organizationService.ReplacePaymentMethodAsync(orgIdGuid, model.PaymentToken,
+                model.PaymentMethodType.Value);
         }
-        
+
         [HttpPost("{id}/upgrade")]
         [SelfHosted(NotSelfHostedOnly = true)]
         public async Task PostUpgrade(string id, [FromBody]OrganizationUpgradeRequestModel model)
@@ -247,7 +225,7 @@ namespace Bit.Api.Controllers
 
             await _organizationService.UpgradePlanAsync(orgIdGuid, model.PlanType, model.AdditionalSeats);
         }
-        
+
         [HttpPost("{id}/seat")]
         [SelfHosted(NotSelfHostedOnly = true)]
         public async Task PostSeat(string id, [FromBody]OrganizationSeatRequestModel model)
@@ -260,7 +238,7 @@ namespace Bit.Api.Controllers
 
             await _organizationService.AdjustSeatsAsync(orgIdGuid, model.SeatAdjustment.Value);
         }
-        
+
         [HttpPost("{id}/storage")]
         [SelfHosted(NotSelfHostedOnly = true)]
         public async Task PostStorage(string id, [FromBody]StorageRequestModel model)
@@ -286,7 +264,7 @@ namespace Bit.Api.Controllers
 
             await _organizationService.VerifyBankAsync(orgIdGuid, model.Amount1.Value, model.Amount2.Value);
         }
-        
+
         [HttpPost("{id}/cancel")]
         [SelfHosted(NotSelfHostedOnly = true)]
         public async Task PostCancel(string id)
@@ -297,9 +275,9 @@ namespace Bit.Api.Controllers
                 throw new NotFoundException();
             }
 
-            await _organizationService.CancelSubscriptionAsync(orgIdGuid, true);
+            await _organizationService.CancelSubscriptionAsync(orgIdGuid);
         }
-        
+
         [HttpPost("{id}/reinstate")]
         [SelfHosted(NotSelfHostedOnly = true)]
         public async Task PostReinstate(string id)
@@ -358,7 +336,7 @@ namespace Bit.Api.Controllers
                 await _organizationService.DeleteAsync(organization);
             }
         }
-        
+
         [HttpPost("{id}/license")]
         [SelfHosted(SelfHostedOnly = true)]
         public async Task PostLicense(string id, LicenseRequestModel model)
@@ -399,6 +377,73 @@ namespace Bit.Api.Controllers
                 model.Groups.Select(g => g.ToImportedGroup(orgIdGuid)),
                 model.Users.Where(u => !u.Deleted).Select(u => u.ToImportedOrganizationUser()),
                 model.Users.Where(u => u.Deleted).Select(u => u.ExternalId));
+        }
+
+        [HttpPost("{id}/api-key")]
+        public async Task<ApiKeyResponseModel> ApiKey(string id, [FromBody]ApiKeyRequestModel model)
+        {
+            var orgIdGuid = new Guid(id);
+            if(!_currentContext.OrganizationOwner(orgIdGuid))
+            {
+                throw new NotFoundException();
+            }
+
+            var organization = await _organizationRepository.GetByIdAsync(orgIdGuid);
+            if(organization == null)
+            {
+                throw new NotFoundException();
+            }
+
+            var user = await _userService.GetUserByPrincipalAsync(User);
+            if(user == null)
+            {
+                throw new UnauthorizedAccessException();
+            }
+
+            if(!await _userService.CheckPasswordAsync(user, model.MasterPasswordHash))
+            {
+                await Task.Delay(2000);
+                throw new BadRequestException("MasterPasswordHash", "Invalid password.");
+            }
+            else
+            {
+                var response = new ApiKeyResponseModel(organization);
+                return response;
+            }
+        }
+
+        [HttpPost("{id}/rotate-api-key")]
+        public async Task<ApiKeyResponseModel> RotateApiKey(string id, [FromBody]ApiKeyRequestModel model)
+        {
+            var orgIdGuid = new Guid(id);
+            if(!_currentContext.OrganizationOwner(orgIdGuid))
+            {
+                throw new NotFoundException();
+            }
+
+            var organization = await _organizationRepository.GetByIdAsync(orgIdGuid);
+            if(organization == null)
+            {
+                throw new NotFoundException();
+            }
+
+            var user = await _userService.GetUserByPrincipalAsync(User);
+            if(user == null)
+            {
+                throw new UnauthorizedAccessException();
+            }
+
+            if(!await _userService.CheckPasswordAsync(user, model.MasterPasswordHash))
+            {
+                await Task.Delay(2000);
+                throw new BadRequestException("MasterPasswordHash", "Invalid password.");
+            }
+            else
+            {
+                await _organizationService.RotateApiKeyAsync(organization);
+                var response = new ApiKeyResponseModel(organization);
+                return response;
+            }
         }
     }
 }

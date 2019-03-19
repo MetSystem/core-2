@@ -16,10 +16,10 @@ namespace Bit.Core.Models.Business
         public OrganizationLicense()
         { }
 
-        public OrganizationLicense(Organization org, BillingInfo billingInfo, Guid installationId,
+        public OrganizationLicense(Organization org, SubscriptionInfo subscriptionInfo, Guid installationId,
             ILicensingService licenseService)
         {
-            Version = 4;
+            Version = 4; // TODO: Version 5 bump
             LicenseKey = org.LicenseKey;
             InstallationId = installationId;
             Id = org.Id;
@@ -36,12 +36,13 @@ namespace Bit.Core.Models.Business
             UseDirectory = org.UseDirectory;
             UseTotp = org.UseTotp;
             Use2fa = org.Use2fa;
+            UseApi = org.UseApi;
             MaxStorageGb = org.MaxStorageGb;
             SelfHost = org.SelfHost;
             UsersGetPremium = org.UsersGetPremium;
             Issued = DateTime.UtcNow;
 
-            if(billingInfo?.Subscription == null)
+            if(subscriptionInfo?.Subscription == null)
             {
                 if(org.PlanType == PlanType.Custom && org.ExpirationDate.HasValue)
                 {
@@ -54,10 +55,10 @@ namespace Bit.Core.Models.Business
                     Trial = true;
                 }
             }
-            else if(billingInfo.Subscription.TrialEndDate.HasValue &&
-                billingInfo.Subscription.TrialEndDate.Value > DateTime.UtcNow)
+            else if(subscriptionInfo.Subscription.TrialEndDate.HasValue &&
+                subscriptionInfo.Subscription.TrialEndDate.Value > DateTime.UtcNow)
             {
-                Expires = Refresh = billingInfo.Subscription.TrialEndDate.Value;
+                Expires = Refresh = subscriptionInfo.Subscription.TrialEndDate.Value;
                 Trial = true;
             }
             else
@@ -67,11 +68,11 @@ namespace Bit.Core.Models.Business
                     // expired
                     Expires = Refresh = org.ExpirationDate.Value;
                 }
-                else if(billingInfo?.Subscription?.PeriodDuration != null &&
-                    billingInfo.Subscription.PeriodDuration > TimeSpan.FromDays(180))
+                else if(subscriptionInfo?.Subscription?.PeriodDuration != null &&
+                    subscriptionInfo.Subscription.PeriodDuration > TimeSpan.FromDays(180))
                 {
                     Refresh = DateTime.UtcNow.AddDays(30);
-                    Expires = billingInfo?.Subscription.PeriodEndDate.Value.AddDays(60);
+                    Expires = subscriptionInfo?.Subscription.PeriodEndDate.Value.AddDays(60);
                 }
                 else
                 {
@@ -102,6 +103,7 @@ namespace Bit.Core.Models.Business
         public bool UseDirectory { get; set; }
         public bool UseTotp { get; set; }
         public bool Use2fa { get; set; }
+        public bool UseApi { get; set; }
         public short? MaxStorageGb { get; set; }
         public bool SelfHost { get; set; }
         public bool UsersGetPremium { get; set; }
@@ -118,7 +120,7 @@ namespace Bit.Core.Models.Business
         public byte[] GetDataBytes(bool forHash = false)
         {
             string data = null;
-            if(Version >= 1 && Version <= 4)
+            if(Version >= 1 && Version <= 5)
             {
                 var props = typeof(OrganizationLicense)
                     .GetProperties(BindingFlags.Public | BindingFlags.Instance)
@@ -131,6 +133,8 @@ namespace Bit.Core.Models.Business
                         (Version >= 3 || !p.Name.Equals(nameof(UseEvents))) &&
                         // Use2fa was added in Version 4
                         (Version >= 4 || !p.Name.Equals(nameof(Use2fa))) &&
+                        // UseApi was added in Version 5
+                        (Version >= 5 || !p.Name.Equals(nameof(UseApi))) &&
                         (
                             !forHash ||
                             (
@@ -167,7 +171,7 @@ namespace Bit.Core.Models.Business
                 return false;
             }
 
-            if(Version >= 1 && Version <= 4)
+            if(Version >= 1 && Version <= 5)
             {
                 return InstallationId == globalSettings.Installation.Id && SelfHost;
             }
@@ -184,7 +188,7 @@ namespace Bit.Core.Models.Business
                 return false;
             }
 
-            if(Version >= 1 && Version <= 4)
+            if(Version >= 1 && Version <= 5)
             {
                 var valid =
                     globalSettings.Installation.Id == InstallationId &&
@@ -212,6 +216,11 @@ namespace Bit.Core.Models.Business
                 if(valid && Version >= 4)
                 {
                     valid = organization.Use2fa == Use2fa;
+                }
+
+                if(valid && Version >= 5)
+                {
+                    valid = organization.UseApi == UseApi;
                 }
 
                 return valid;

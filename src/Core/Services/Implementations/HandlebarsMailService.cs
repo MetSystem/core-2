@@ -43,6 +43,7 @@ namespace Bit.Core.Services
             };
             await AddMessageContentAsync(message, "VerifyEmail", model);
             message.MetaData.Add("SendGridBypassListManagement", true);
+            message.Category = "VerifyEmail";
             await _mailDeliveryService.SendEmailAsync(message);
         }
 
@@ -60,6 +61,7 @@ namespace Bit.Core.Services
             };
             await AddMessageContentAsync(message, "VerifyDelete", model);
             message.MetaData.Add("SendGridBypassListManagement", true);
+            message.Category = "VerifyDelete";
             await _mailDeliveryService.SendEmailAsync(message);
         }
 
@@ -74,6 +76,7 @@ namespace Bit.Core.Services
                 SiteName = _globalSettings.SiteName
             };
             await AddMessageContentAsync(message, "ChangeEmailAlreadyExists", model);
+            message.Category = "ChangeEmailAlreadyExists";
             await _mailDeliveryService.SendEmailAsync(message);
         }
 
@@ -88,6 +91,7 @@ namespace Bit.Core.Services
             };
             await AddMessageContentAsync(message, "ChangeEmail", model);
             message.MetaData.Add("SendGridBypassListManagement", true);
+            message.Category = "ChangeEmail";
             await _mailDeliveryService.SendEmailAsync(message);
         }
 
@@ -102,6 +106,7 @@ namespace Bit.Core.Services
             };
             await AddMessageContentAsync(message, "TwoFactorEmail", model);
             message.MetaData.Add("SendGridBypassListManagement", true);
+            message.Category = "TwoFactorEmail";
             await _mailDeliveryService.SendEmailAsync(message);
         }
 
@@ -115,6 +120,7 @@ namespace Bit.Core.Services
                 SiteName = _globalSettings.SiteName
             };
             await AddMessageContentAsync(message, "MasterPasswordHint", model);
+            message.Category = "MasterPasswordHint";
             await _mailDeliveryService.SendEmailAsync(message);
         }
 
@@ -127,6 +133,7 @@ namespace Bit.Core.Services
                 SiteName = _globalSettings.SiteName
             };
             await AddMessageContentAsync(message, "NoMasterPasswordHint", model);
+            message.Category = "NoMasterPasswordHint";
             await _mailDeliveryService.SendEmailAsync(message);
         }
 
@@ -142,6 +149,7 @@ namespace Bit.Core.Services
                 SiteName = _globalSettings.SiteName
             };
             await AddMessageContentAsync(message, "OrganizationUserAccepted", model);
+            message.Category = "OrganizationUserAccepted";
             await _mailDeliveryService.SendEmailAsync(message);
         }
 
@@ -155,6 +163,7 @@ namespace Bit.Core.Services
                 SiteName = _globalSettings.SiteName
             };
             await AddMessageContentAsync(message, "OrganizationUserConfirmed", model);
+            message.Category = "OrganizationUserConfirmed";
             await _mailDeliveryService.SendEmailAsync(message);
         }
 
@@ -173,6 +182,7 @@ namespace Bit.Core.Services
                 SiteName = _globalSettings.SiteName
             };
             await AddMessageContentAsync(message, "OrganizationUserInvited", model);
+            message.Category = "OrganizationUserInvited";
             await _mailDeliveryService.SendEmailAsync(message);
         }
 
@@ -185,6 +195,7 @@ namespace Bit.Core.Services
                 SiteName = _globalSettings.SiteName
             };
             await AddMessageContentAsync(message, "Welcome", model);
+            message.Category = "Welcome";
             await _mailDeliveryService.SendEmailAsync(message);
         }
 
@@ -203,6 +214,7 @@ namespace Bit.Core.Services
                 Url = url.ToString()
             };
             await AddMessageContentAsync(message, "PasswordlessSignIn", model);
+            message.Category = "PasswordlessSignIn";
             await _mailDeliveryService.SendEmailAsync(message);
         }
 
@@ -220,6 +232,54 @@ namespace Bit.Core.Services
                 MentionInvoices = mentionInvoices
             };
             await AddMessageContentAsync(message, "InvoiceUpcoming", model);
+            message.Category = "InvoiceUpcoming";
+            await _mailDeliveryService.SendEmailAsync(message);
+        }
+
+        public async Task SendPaymentFailedAsync(string email, decimal amount, bool mentionInvoices)
+        {
+            var message = CreateDefaultMessage("Payment Failed", email);
+            var model = new PaymentFailedViewModel
+            {
+                WebVaultUrl = _globalSettings.BaseServiceUri.VaultWithHash,
+                SiteName = _globalSettings.SiteName,
+                Amount = amount,
+                MentionInvoices = mentionInvoices
+            };
+            await AddMessageContentAsync(message, "PaymentFailed", model);
+            message.Category = "PaymentFailed";
+            await _mailDeliveryService.SendEmailAsync(message);
+        }
+
+        public async Task SendAddedCreditAsync(string email, decimal amount)
+        {
+            var message = CreateDefaultMessage("Account Credit Payment Processed", email);
+            var model = new AddedCreditViewModel
+            {
+                WebVaultUrl = _globalSettings.BaseServiceUri.VaultWithHash,
+                SiteName = _globalSettings.SiteName,
+                Amount = amount
+            };
+            await AddMessageContentAsync(message, "AddedCredit", model);
+            message.Category = "AddedCredit";
+            await _mailDeliveryService.SendEmailAsync(message);
+        }
+
+        public async Task SendNewDeviceLoggedInEmail(string email, string deviceType, DateTime timestamp, string ip)
+        {
+            var message = CreateDefaultMessage($"New Device Logged In From {deviceType}", email);
+            var model = new NewDeviceLoggedInModel
+            {
+                WebVaultUrl = _globalSettings.BaseServiceUri.VaultWithHash,
+                SiteName = _globalSettings.SiteName,
+                DeviceType = deviceType,
+                TheDate = timestamp.ToLongDateString(),
+                TheTime = timestamp.ToShortTimeString(),
+                TimeZone = "UTC",
+                IpAddress = ip
+            };
+            await AddMessageContentAsync(message, "NewDeviceLoggedIn", model);
+            message.Category = "NewDeviceLoggedIn";
             await _mailDeliveryService.SendEmailAsync(message);
         }
 

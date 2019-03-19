@@ -23,7 +23,8 @@ namespace Bit.Core.Services
         Task SendTwoFactorEmailAsync(User user);
         Task<bool> VerifyTwoFactorEmailAsync(User user, string token);
         Task<U2fRegistration> StartU2fRegistrationAsync(User user);
-        Task<bool> CompleteU2fRegistrationAsync(User user, string deviceResponse);
+        Task<bool> DeleteU2fKeyAsync(User user, int id);
+        Task<bool> CompleteU2fRegistrationAsync(User user, int id, string name, string deviceResponse);
         Task SendEmailVerificationAsync(User user);
         Task<IdentityResult> ConfirmEmailAsync(User user, string token);
         Task InitiateEmailChangeAsync(User user, string newEmail);
@@ -42,17 +43,20 @@ namespace Bit.Core.Services
         Task<IdentityResult> DeleteAsync(User user);
         Task<IdentityResult> DeleteAsync(User user, string token);
         Task SendDeleteConfirmationAsync(string email);
-        Task SignUpPremiumAsync(User user, string paymentToken, short additionalStorageGb, UserLicense license);
+        Task SignUpPremiumAsync(User user, string paymentToken, PaymentMethodType paymentMethodType,
+            short additionalStorageGb, UserLicense license);
         Task UpdateLicenseAsync(User user, UserLicense license);
         Task AdjustStorageAsync(User user, short storageAdjustmentGb);
-        Task ReplacePaymentMethodAsync(User user, string paymentToken);
-        Task CancelPremiumAsync(User user, bool endOfPeriod = false);
+        Task ReplacePaymentMethodAsync(User user, string paymentToken, PaymentMethodType paymentMethodType);
+        Task CancelPremiumAsync(User user, bool? endOfPeriod = null);
         Task ReinstatePremiumAsync(User user);
         Task DisablePremiumAsync(Guid userId, DateTime? expirationDate);
         Task DisablePremiumAsync(User user, DateTime? expirationDate);
         Task UpdatePremiumExpirationAsync(Guid userId, DateTime? expirationDate);
-        Task<UserLicense> GenerateLicenseAsync(User user, BillingInfo billingInfo = null);
+        Task<UserLicense> GenerateLicenseAsync(User user, SubscriptionInfo subscriptionInfo = null);
         Task<bool> CheckPasswordAsync(User user, string password);
-        Task<bool> CanAccessPremium(User user);
+        Task<bool> CanAccessPremium(ITwoFactorProvidersUser user);
+        Task<bool> TwoFactorIsEnabledAsync(ITwoFactorProvidersUser user);
+        Task<bool> TwoFactorProviderIsEnabledAsync(TwoFactorProviderType provider, ITwoFactorProvidersUser user);
     }
 }

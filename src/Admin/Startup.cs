@@ -5,6 +5,7 @@ using Bit.Core.Utilities;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -48,6 +49,10 @@ namespace Bit.Admin
 
             // Identity
             services.AddPasswordlessIdentityServices<ReadOnlyEnvIdentityUserStore>(globalSettings);
+            services.Configure<SecurityStampValidatorOptions>(options =>
+            {
+                options.ValidationInterval = TimeSpan.FromMinutes(5);
+            });
             if(globalSettings.SelfHosted)
             {
                 services.ConfigureApplicationCookie(options =>
@@ -66,6 +71,21 @@ namespace Bit.Admin
                 config.Filters.Add(new LoggingExceptionHandlerFilterAttribute());
             });
             services.Configure<RouteOptions>(options => options.LowercaseUrls = true);
+
+            // Jobs service
+            Jobs.JobsHostedService.AddJobsServices(services);
+            services.AddHostedService<Jobs.JobsHostedService>();
+            if(!globalSettings.SelfHosted)
+            {
+                if(CoreHelpers.SettingHasValue(globalSettings.Storage.ConnectionString))
+                {
+                    services.AddHostedService<HostedServices.AzureQueueBlockIpHostedService>();
+                }
+                else if(CoreHelpers.SettingHasValue(globalSettings.Amazon?.AccessKeySecret))
+                {
+                    services.AddHostedService<HostedServices.AmazonSqsBlockIpHostedService>();
+                }
+            }
         }
 
         public void Configure(

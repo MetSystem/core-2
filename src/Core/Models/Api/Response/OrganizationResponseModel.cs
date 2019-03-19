@@ -35,7 +35,9 @@ namespace Bit.Core.Models.Api
             UseEvents = organization.UseEvents;
             UseTotp = organization.UseTotp;
             Use2fa = organization.Use2fa;
+            UseApi = organization.UseApi;
             UsersGetPremium = organization.UsersGetPremium;
+            SelfHost = organization.SelfHost;
         }
 
         public string Id { get; set; }
@@ -57,39 +59,39 @@ namespace Bit.Core.Models.Api
         public bool UseEvents { get; set; }
         public bool UseTotp { get; set; }
         public bool Use2fa { get; set; }
+        public bool UseApi { get; set; }
         public bool UsersGetPremium { get; set; }
+        public bool SelfHost { get; set; }
     }
 
-    public class OrganizationBillingResponseModel : OrganizationResponseModel
+    public class OrganizationSubscriptionResponseModel : OrganizationResponseModel
     {
-        public OrganizationBillingResponseModel(Organization organization, BillingInfo billing)
-            : base(organization, "organizationBilling")
+        public OrganizationSubscriptionResponseModel(Organization organization, SubscriptionInfo subscription = null)
+            : base(organization, "organizationSubscription")
         {
-            PaymentSource = billing.PaymentSource != null ? new BillingSource(billing.PaymentSource) : null;
-            Subscription = billing.Subscription != null ? new BillingSubscription(billing.Subscription) : null;
-            Charges = billing.Charges.Select(c => new BillingCharge(c));
-            UpcomingInvoice = billing.UpcomingInvoice != null ? new BillingInvoice(billing.UpcomingInvoice) : null;
-            StorageName = organization.Storage.HasValue ?
-                Utilities.CoreHelpers.ReadableBytesSize(organization.Storage.Value) : null;
-            StorageGb = organization.Storage.HasValue ? Math.Round(organization.Storage.Value / 1073741824D) : 0; // 1 GB
-            Expiration = DateTime.UtcNow.AddYears(1);
-        }
+            if(subscription != null)
+            {
+                Subscription = subscription.Subscription != null ?
+                    new BillingSubscription(subscription.Subscription) : null;
+                UpcomingInvoice = subscription.UpcomingInvoice != null ?
+                    new BillingSubscriptionUpcomingInvoice(subscription.UpcomingInvoice) : null;
+                Expiration = DateTime.UtcNow.AddYears(1); // Not used, so just give it a value.
+            }
+            else
+            {
+                Expiration = organization.ExpirationDate;
+            }
 
-        public OrganizationBillingResponseModel(Organization organization)
-            : base(organization, "organizationBilling")
-        {
             StorageName = organization.Storage.HasValue ?
                 Utilities.CoreHelpers.ReadableBytesSize(organization.Storage.Value) : null;
-            StorageGb = organization.Storage.HasValue ? Math.Round(organization.Storage.Value / 1073741824D, 2) : 0; // 1 GB
-            Expiration = organization.ExpirationDate;
+            StorageGb = organization.Storage.HasValue ?
+                Math.Round(organization.Storage.Value / 1073741824D, 2) : 0; // 1 GB
         }
 
         public string StorageName { get; set; }
         public double? StorageGb { get; set; }
-        public BillingSource PaymentSource { get; set; }
         public BillingSubscription Subscription { get; set; }
-        public BillingInvoice UpcomingInvoice { get; set; }
-        public IEnumerable<BillingCharge> Charges { get; set; }
+        public BillingSubscriptionUpcomingInvoice UpcomingInvoice { get; set; }
         public DateTime? Expiration { get; set; }
     }
 }

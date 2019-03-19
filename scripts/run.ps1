@@ -53,10 +53,6 @@ function Install() {
     docker run -it --rm --name setup -v ${outputDir}:/bitwarden bitwarden/setup:$coreVersion `
         dotnet Setup.dll -install 1 -domain ${domain} -letsencrypt ${letsEncrypt} `
         -os win -corev $coreVersion -webv $webVersion
-    
-    echo ""
-    echo "Setup complete"
-    echo ""    
 }
 
 function Docker-Compose-Up {
@@ -81,10 +77,12 @@ function Docker-Compose-Files {
     else {
         $env:COMPOSE_FILE = "${dockerDir}\docker-compose.yml"
     }
+    $env:COMPOSE_HTTP_TIMEOUT = "300"
 }
 
 function Docker-Prune {
-    docker image prune -f --filter="label=com.bitwarden.product=bitwarden"
+    docker image prune --all --force --filter="label=com.bitwarden.product=bitwarden" `
+        --filter="label!=com.bitwarden.project=setup"
 }
 
 function Update-Lets-Encrypt {

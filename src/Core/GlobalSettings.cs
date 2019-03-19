@@ -12,10 +12,12 @@ namespace Bit.Core
         public virtual string LicenseDirectory { get; set; }
         public virtual string PushRelayBaseUri { get; set; }
         public virtual string InternalIdentityKey { get; set; }
+        public virtual string HibpBreachApiKey { get; set; }
         public virtual bool DisableUserRegistration { get; set; }
         public virtual InstallationSettings Installation { get; set; } = new InstallationSettings();
         public virtual BaseServiceUriSettings BaseServiceUri { get; set; } = new BaseServiceUriSettings();
-        public virtual SqlServerSettings SqlServer { get; set; } = new SqlServerSettings();
+        public virtual SqlSettings SqlServer { get; set; } = new SqlSettings();
+        public virtual SqlSettings PostgreSql { get; set; } = new SqlSettings();
         public virtual MailSettings Mail { get; set; } = new MailSettings();
         public virtual StorageSettings Storage { get; set; } = new StorageSettings();
         public virtual StorageSettings Events { get; set; } = new StorageSettings();
@@ -29,6 +31,8 @@ namespace Bit.Core
         public virtual YubicoSettings Yubico { get; set; } = new YubicoSettings();
         public virtual DuoSettings Duo { get; set; } = new DuoSettings();
         public virtual BraintreeSettings Braintree { get; set; } = new BraintreeSettings();
+        public virtual BitPaySettings BitPay { get; set; } = new BitPaySettings();
+        public virtual AmazonSettings Amazon { get; set; } = new AmazonSettings();
 
         public class BaseServiceUriSettings
         {
@@ -45,9 +49,10 @@ namespace Bit.Core
             public string InternalVault { get; set; }
         }
 
-        public class SqlServerSettings
+        public class SqlSettings
         {
             private string _connectionString;
+            private string _readOnlyConnectionString;
 
             public string ConnectionString
             {
@@ -55,6 +60,16 @@ namespace Bit.Core
                 set
                 {
                     _connectionString = value.Trim('"');
+                }
+            }
+
+            public string ReadOnlyConnectionString
+            {
+                get => string.IsNullOrWhiteSpace(_readOnlyConnectionString) ?
+                    _connectionString : _readOnlyConnectionString;
+                set
+                {
+                    _readOnlyConnectionString = value.Trim('"');
                 }
             }
         }
@@ -93,6 +108,7 @@ namespace Bit.Core
         {
             public string ReplyToEmail { get; set; }
             public string SendGridApiKey { get; set; }
+            public string AmazonConfigSetName { get; set; }
             public SmtpSettings Smtp { get; set; } = new SmtpSettings();
 
             public class SmtpSettings
@@ -100,10 +116,14 @@ namespace Bit.Core
                 public string Host { get; set; }
                 public int Port { get; set; } = 25;
                 public bool Ssl { get; set; } = false;
+                public bool SslOverride { get; set; } = false;
                 public string Username { get; set; }
                 public string Password { get; set; }
+                [Obsolete]
                 public bool UseDefaultCredentials { get; set; } = false;
+                [Obsolete]
                 public string AuthType { get; set; }
+                public bool TrustServer { get; set; } = false;
             }
         }
 
@@ -169,11 +189,25 @@ namespace Bit.Core
             public string PrivateKey { get; set; }
         }
 
+        public class BitPaySettings
+        {
+            public bool Production { get; set; }
+            public string Base58Secret { get; set; }
+            public string NotificationUrl { get; set; }
+        }
+
         public class InstallationSettings
         {
             public Guid Id { get; set; }
             public string Key { get; set; }
             public string IdentityUri { get; set; }
+        }
+
+        public class AmazonSettings
+        {
+            public string AccessKeyId { get; set; }
+            public string AccessKeySecret { get; set; }
+            public string Region { get; set; }
         }
     }
 }

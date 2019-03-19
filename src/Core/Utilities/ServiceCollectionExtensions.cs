@@ -19,6 +19,8 @@ using Microsoft.WindowsAzure.Storage;
 using System;
 using System.IO;
 using SqlServerRepos = Bit.Core.Repositories.SqlServer;
+using PostgreSqlRepos = Bit.Core.Repositories.PostgreSql;
+using NoopRepos = Bit.Core.Repositories.Noop;
 using System.Threading.Tasks;
 using TableStorageRepos = Bit.Core.Repositories.TableStorage;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -32,26 +34,37 @@ namespace Bit.Core.Utilities
     {
         public static void AddSqlServerRepositories(this IServiceCollection services, GlobalSettings globalSettings)
         {
-            services.AddSingleton<IUserRepository, SqlServerRepos.UserRepository>();
-            services.AddSingleton<ICipherRepository, SqlServerRepos.CipherRepository>();
-            services.AddSingleton<IDeviceRepository, SqlServerRepos.DeviceRepository>();
-            services.AddSingleton<IGrantRepository, SqlServerRepos.GrantRepository>();
-            services.AddSingleton<IOrganizationRepository, SqlServerRepos.OrganizationRepository>();
-            services.AddSingleton<IOrganizationUserRepository, SqlServerRepos.OrganizationUserRepository>();
-            services.AddSingleton<ICollectionRepository, SqlServerRepos.CollectionRepository>();
-            services.AddSingleton<IFolderRepository, SqlServerRepos.FolderRepository>();
-            services.AddSingleton<ICollectionCipherRepository, SqlServerRepos.CollectionCipherRepository>();
-            services.AddSingleton<IGroupRepository, SqlServerRepos.GroupRepository>();
-            services.AddSingleton<IU2fRepository, SqlServerRepos.U2fRepository>();
-            services.AddSingleton<IInstallationRepository, SqlServerRepos.InstallationRepository>();
+            if(!string.IsNullOrWhiteSpace(globalSettings.PostgreSql?.ConnectionString))
+            {
+                services.AddSingleton<IUserRepository, PostgreSqlRepos.UserRepository>();
+            }
+            else
+            {
+                services.AddSingleton<IUserRepository, SqlServerRepos.UserRepository>();
+                services.AddSingleton<ICipherRepository, SqlServerRepos.CipherRepository>();
+                services.AddSingleton<IDeviceRepository, SqlServerRepos.DeviceRepository>();
+                services.AddSingleton<IGrantRepository, SqlServerRepos.GrantRepository>();
+                services.AddSingleton<IOrganizationRepository, SqlServerRepos.OrganizationRepository>();
+                services.AddSingleton<IOrganizationUserRepository, SqlServerRepos.OrganizationUserRepository>();
+                services.AddSingleton<ICollectionRepository, SqlServerRepos.CollectionRepository>();
+                services.AddSingleton<IFolderRepository, SqlServerRepos.FolderRepository>();
+                services.AddSingleton<ICollectionCipherRepository, SqlServerRepos.CollectionCipherRepository>();
+                services.AddSingleton<IGroupRepository, SqlServerRepos.GroupRepository>();
+                services.AddSingleton<IU2fRepository, SqlServerRepos.U2fRepository>();
+                services.AddSingleton<IInstallationRepository, SqlServerRepos.InstallationRepository>();
+                services.AddSingleton<IMaintenanceRepository, SqlServerRepos.MaintenanceRepository>();
+                services.AddSingleton<ITransactionRepository, SqlServerRepos.TransactionRepository>();
+            }
 
             if(globalSettings.SelfHosted)
             {
                 services.AddSingleton<IEventRepository, SqlServerRepos.EventRepository>();
+                services.AddSingleton<IInstallationDeviceRepository, NoopRepos.InstallationDeviceRepository>();
             }
             else
             {
                 services.AddSingleton<IEventRepository, TableStorageRepos.EventRepository>();
+                services.AddSingleton<IInstallationDeviceRepository, TableStorageRepos.InstallationDeviceRepository>();
             }
         }
 
@@ -68,6 +81,7 @@ namespace Bit.Core.Utilities
 
         public static void AddDefaultServices(this IServiceCollection services, GlobalSettings globalSettings)
         {
+            services.AddSingleton<IPaymentService, StripePaymentService>();
             services.AddSingleton<IMailService, HandlebarsMailService>();
             services.AddSingleton<ILicensingService, LicensingService>();
             services.AddSingleton<IApplicationCacheService, InMemoryApplicationCacheService>();
@@ -76,9 +90,13 @@ namespace Bit.Core.Utilities
             {
                 services.AddSingleton<IMailDeliveryService, SendGridMailDeliveryService>();
             }
+            else if(CoreHelpers.SettingHasValue(globalSettings.Amazon?.AccessKeySecret))
+            {
+                services.AddSingleton<IMailDeliveryService, AmazonSesMailDeliveryService>();
+            }
             else if(CoreHelpers.SettingHasValue(globalSettings.Mail?.Smtp?.Host))
             {
-                services.AddSingleton<IMailDeliveryService, SmtpMailDeliveryService>();
+                services.AddSingleton<IMailDeliveryService, MailKitSmtpMailDeliveryService>();
             }
             else
             {
@@ -105,6 +123,10 @@ namespace Bit.Core.Utilities
             if(!globalSettings.SelfHosted && CoreHelpers.SettingHasValue(globalSettings.Storage.ConnectionString))
             {
                 services.AddSingleton<IBlockIpService, AzureQueueBlockIpService>();
+            }
+            else if(!globalSettings.SelfHosted && CoreHelpers.SettingHasValue(globalSettings.Amazon?.AccessKeySecret))
+            {
+                services.AddSingleton<IBlockIpService, AmazonSqsBlockIpService>();
             }
             else
             {
@@ -188,11 +210,18 @@ namespace Bit.Core.Utilities
                 .AddUserStore<UserStore>()
                 .AddRoleStore<RoleStore>()
                 .AddTokenProvider<DataProtectorTokenProvider<User>>(TokenOptions.DefaultProvider)
-                .AddTokenProvider<AuthenticatorTokenProvider>(TwoFactorProviderType.Authenticator.ToString())
-                .AddTokenProvider<YubicoOtpTokenProvider>(TwoFactorProviderType.YubiKey.ToString())
-                .AddTokenProvider<DuoWebTokenProvider>(TwoFactorProviderType.Duo.ToString())
-                .AddTokenProvider<U2fTokenProvider>(TwoFactorProviderType.U2f.ToString())
-                .AddTokenProvider<TwoFactorRememberTokenProvider>(TwoFactorProviderType.Remember.ToString())
+                .AddTokenProvider<AuthenticatorTokenProvider>(
+                    CoreHelpers.CustomProviderName(TwoFactorProviderType.Authenticator))
+                .AddTokenProvider<EmailTokenProvider>(
+                    CoreHelpers.CustomProviderName(TwoFactorProviderType.Email))
+                .AddTokenProvider<YubicoOtpTokenProvider>(
+                    CoreHelpers.CustomProviderName(TwoFactorProviderType.YubiKey))
+                .AddTokenProvider<DuoWebTokenProvider>(
+                    CoreHelpers.CustomProviderName(TwoFactorProviderType.Duo))
+                .AddTokenProvider<U2fTokenProvider>(
+                    CoreHelpers.CustomProviderName(TwoFactorProviderType.U2f))
+                .AddTokenProvider<TwoFactorRememberTokenProvider>(
+                    CoreHelpers.CustomProviderName(TwoFactorProviderType.Remember))
                 .AddTokenProvider<EmailTokenProvider<User>>(TokenOptions.DefaultEmailProvider);
 
             return identityBuilder;
@@ -254,6 +283,11 @@ namespace Bit.Core.Utilities
                 {
                     addAuthorization.Invoke(config);
                 });
+            }
+
+            if(environment.IsDevelopment())
+            {
+                Microsoft.IdentityModel.Logging.IdentityModelEventSource.ShowPII = true;
             }
         }
 
@@ -321,9 +355,11 @@ namespace Bit.Core.Utilities
                     .PersistKeysToFileSystem(new DirectoryInfo(globalSettings.DataProtection.Directory));
             }
 
-            if(!globalSettings.SelfHosted)
+            if(!globalSettings.SelfHosted && CoreHelpers.SettingHasValue(globalSettings.Storage.ConnectionString) &&
+                CoreHelpers.SettingHasValue(globalSettings.DataProtection.CertificateThumbprint))
             {
-                var dataProtectionCert = CoreHelpers.GetCertificate(globalSettings.DataProtection.CertificateThumbprint);
+                var dataProtectionCert = CoreHelpers.GetCertificate(
+                    globalSettings.DataProtection.CertificateThumbprint);
                 var storageAccount = CloudStorageAccount.Parse(globalSettings.Storage.ConnectionString);
                 services.AddDataProtection()
                     .PersistKeysToAzureBlobStorage(storageAccount, "aspnet-dataprotection/keys.xml")

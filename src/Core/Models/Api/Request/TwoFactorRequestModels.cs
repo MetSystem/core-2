@@ -103,7 +103,7 @@ namespace Bit.Core.Models.Api
 
         public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
         {
-            if(!Host.StartsWith("api-") || !Host.EndsWith(".duosecurity.com") || Host.Count(s => s == '.') != 2)
+            if(!Host.StartsWith("api-") || !Host.EndsWith(".duosecurity.com"))
             {
                 yield return new ValidationResult("Host is invalid.", new string[] { nameof(Host) });
             }
@@ -223,10 +223,25 @@ namespace Bit.Core.Models.Api
         }
     }
 
-    public class TwoFactorU2fRequestModel : TwoFactorRequestModel
+    public class TwoFactorU2fRequestModel : TwoFactorU2fDeleteRequestModel
     {
         [Required]
         public string DeviceResponse { get; set; }
+        public string Name { get; set; }
+    }
+
+    public class TwoFactorU2fDeleteRequestModel : TwoFactorRequestModel, IValidatableObject
+    {
+        [Required]
+        public int? Id { get; set; }
+
+        public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
+        {
+            if(!Id.HasValue || Id < 0 || Id > 5)
+            {
+                yield return new ValidationResult("Invalid Key Id", new string[] { nameof(Id) });
+            }
+        }
     }
 
     public class UpdateTwoFactorEmailRequestModel : TwoFactorEmailRequestModel

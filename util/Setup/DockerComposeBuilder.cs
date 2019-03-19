@@ -26,10 +26,10 @@ namespace Bit.Setup
         private void Build()
         {
             Directory.CreateDirectory("/bitwarden/docker/");
-            Console.WriteLine("Building docker-compose.yml.");
+            Helpers.WriteLine(_context, "Building docker-compose.yml.");
             if(!_context.Config.GenerateComposeConfig)
             {
-                Console.WriteLine("...skipped");
+                Helpers.WriteLine(_context, "...skipped");
                 return;
             }
 
@@ -66,6 +66,7 @@ namespace Bit.Setup
             public bool MssqlDataDockerVolume { get; set; }
             public string HttpPort { get; set; }
             public string HttpsPort { get; set; }
+            public bool HasPort => !string.IsNullOrWhiteSpace(HttpPort) || !string.IsNullOrWhiteSpace(HttpsPort);
             public string CoreVersion { get; set; } = "latest";
             public string WebVersion { get; set; } = "latest";
         }

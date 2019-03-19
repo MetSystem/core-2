@@ -15,11 +15,11 @@ namespace Bit.Core.Repositories.SqlServer
     public class GroupRepository : Repository<Group, Guid>, IGroupRepository
     {
         public GroupRepository(GlobalSettings globalSettings)
-            : this(globalSettings.SqlServer.ConnectionString)
+            : this(globalSettings.SqlServer.ConnectionString, globalSettings.SqlServer.ReadOnlyConnectionString)
         { }
 
-        public GroupRepository(string connectionString)
-            : base(connectionString)
+        public GroupRepository(string connectionString, string readOnlyConnectionString)
+            : base(connectionString, readOnlyConnectionString)
         { }
 
         public async Task<Tuple<Group, ICollection<SelectionReadOnly>>> GetByIdWithCollectionsAsync(Guid id)
@@ -51,19 +51,6 @@ namespace Bit.Core.Repositories.SqlServer
             }
         }
 
-        public async Task<ICollection<GroupUserDetails>> GetManyUserDetailsByIdAsync(Guid id)
-        {
-            using(var connection = new SqlConnection(ConnectionString))
-            {
-                var results = await connection.QueryAsync<GroupUserDetails>(
-                    $"[{Schema}].[GroupUserDetails_ReadByGroupId]",
-                    new { GroupId = id },
-                    commandType: CommandType.StoredProcedure);
-
-                return results.ToList();
-            }
-        }
-
         public async Task<ICollection<Guid>> GetManyIdsByUserIdAsync(Guid organizationUserId)
         {
             using(var connection = new SqlConnection(ConnectionString))
@@ -71,6 +58,19 @@ namespace Bit.Core.Repositories.SqlServer
                 var results = await connection.QueryAsync<Guid>(
                     $"[{Schema}].[GroupUser_ReadGroupIdsByOrganizationUserId]",
                     new { OrganizationUserId = organizationUserId },
+                    commandType: CommandType.StoredProcedure);
+
+                return results.ToList();
+            }
+        }
+
+        public async Task<ICollection<Guid>> GetManyUserIdsByIdAsync(Guid id)
+        {
+            using(var connection = new SqlConnection(ConnectionString))
+            {
+                var results = await connection.QueryAsync<Guid>(
+                    $"[{Schema}].[GroupUser_ReadOrganizationUserIdsByGroupId]",
+                    new { GroupId = id },
                     commandType: CommandType.StoredProcedure);
 
                 return results.ToList();

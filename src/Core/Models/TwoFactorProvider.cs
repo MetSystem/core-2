@@ -1,6 +1,5 @@
 ﻿using Bit.Core.Enums;
 using Newtonsoft.Json;
-using System;
 using System.Collections.Generic;
 using U2F.Core.Utils;
 
@@ -17,6 +16,7 @@ namespace Bit.Core.Models
 
             public U2fMetaData(dynamic o)
             {
+                Name = o.Name;
                 KeyHandle = o.KeyHandle;
                 PublicKey = o.PublicKey;
                 Certificate = o.Certificate;
@@ -24,6 +24,7 @@ namespace Bit.Core.Models
                 Compromised = o.Compromised;
             }
 
+            public string Name { get; set; }
             public string KeyHandle { get; set; }
             [JsonIgnore]
             public byte[] KeyHandleBytes =>

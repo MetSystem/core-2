@@ -4,7 +4,7 @@
     {
         User_LoggedIn = 1000,
         User_ChangedPassword = 1001,
-        User_Enabled2fa = 1002,
+        User_Updated2fa = 1002,
         User_Disabled2fa = 1003,
         User_Recovered2fa = 1004,
         User_FailedLogIn = 1005,
@@ -32,6 +32,7 @@
         OrganizationUser_Removed = 1503,
         OrganizationUser_UpdatedGroups = 1504,
 
-        Organization_Updated = 1600
+        Organization_Updated = 1600,
+        Organization_PurgedVault = 1601,
     }
 }

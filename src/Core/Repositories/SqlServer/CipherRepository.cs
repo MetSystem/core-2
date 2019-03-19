@@ -16,11 +16,11 @@ namespace Bit.Core.Repositories.SqlServer
     public class CipherRepository : Repository<Cipher, Guid>, ICipherRepository
     {
         public CipherRepository(GlobalSettings globalSettings)
-            : this(globalSettings.SqlServer.ConnectionString)
+            : this(globalSettings.SqlServer.ConnectionString, globalSettings.SqlServer.ReadOnlyConnectionString)
         { }
 
-        public CipherRepository(string connectionString)
-            : base(connectionString)
+        public CipherRepository(string connectionString, string readOnlyConnectionString)
+            : base(connectionString, readOnlyConnectionString)
         { }
 
         public async Task<CipherDetails> GetByIdAsync(Guid id, Guid userId)
@@ -101,6 +101,21 @@ namespace Bit.Core.Repositories.SqlServer
             }
         }
 
+        public async Task CreateAsync(Cipher cipher, IEnumerable<Guid> collectionIds)
+        {
+            cipher.SetNewId();
+            var objWithCollections = JsonConvert.DeserializeObject<CipherWithCollections>(
+                JsonConvert.SerializeObject(cipher));
+            objWithCollections.CollectionIds = collectionIds.ToGuidIdArrayTVP();
+            using(var connection = new SqlConnection(ConnectionString))
+            {
+                var results = await connection.ExecuteAsync(
+                    $"[{Schema}].[Cipher_CreateWithCollections]",
+                    objWithCollections,
+                    commandType: CommandType.StoredProcedure);
+            }
+        }
+
         public async Task CreateAsync(CipherDetails cipher)
         {
             cipher.SetNewId();
@@ -109,6 +124,21 @@ namespace Bit.Core.Repositories.SqlServer
                 var results = await connection.ExecuteAsync(
                     $"[{Schema}].[CipherDetails_Create]",
                     cipher,
+                    commandType: CommandType.StoredProcedure);
+            }
+        }
+
+        public async Task CreateAsync(CipherDetails cipher, IEnumerable<Guid> collectionIds)
+        {
+            cipher.SetNewId();
+            var objWithCollections = JsonConvert.DeserializeObject<CipherDetailsWithCollections>(
+                JsonConvert.SerializeObject(cipher));
+            objWithCollections.CollectionIds = collectionIds.ToGuidIdArrayTVP();
+            using(var connection = new SqlConnection(ConnectionString))
+            {
+                var results = await connection.ExecuteAsync(
+                    $"[{Schema}].[CipherDetails_CreateWithCollections]",
+                    objWithCollections,
                     commandType: CommandType.StoredProcedure);
             }
         }
@@ -138,7 +168,8 @@ namespace Bit.Core.Repositories.SqlServer
 
         public async Task<bool> ReplaceAsync(Cipher obj, IEnumerable<Guid> collectionIds)
         {
-            var objWithCollections = JsonConvert.DeserializeObject<CipherWithCollections>(JsonConvert.SerializeObject(obj));
+            var objWithCollections = JsonConvert.DeserializeObject<CipherWithCollections>(
+                JsonConvert.SerializeObject(obj));
             objWithCollections.CollectionIds = collectionIds.ToGuidIdArrayTVP();
 
             using(var connection = new SqlConnection(ConnectionString))
@@ -213,6 +244,17 @@ namespace Bit.Core.Repositories.SqlServer
                 var results = await connection.ExecuteAsync(
                     $"[{Schema}].[Cipher_DeleteByUserId]",
                     new { UserId = userId },
+                    commandType: CommandType.StoredProcedure);
+            }
+        }
+
+        public async Task DeleteByOrganizationIdAsync(Guid organizationId)
+        {
+            using(var connection = new SqlConnection(ConnectionString))
+            {
+                var results = await connection.ExecuteAsync(
+                    $"[{Schema}].[Cipher_DeleteByOrganizationId]",
+                    new { OrganizationId = organizationId },
                     commandType: CommandType.StoredProcedure);
             }
         }
@@ -298,6 +340,7 @@ namespace Bit.Core.Repositories.SqlServer
                                     [dbo].[Cipher]
                                 SET
                                     [Data] = TC.[Data],
+                                    [Attachments] = TC.[Attachments],
                                     [RevisionDate] = TC.[RevisionDate]
                                 FROM
                                     [dbo].[Cipher] C
@@ -702,6 +745,11 @@ namespace Bit.Core.Repositories.SqlServer
             }
 
             return collectionCiphersTable;
+        }
+
+        public class CipherDetailsWithCollections : CipherDetails
+        {
+            public DataTable CollectionIds { get; set; }
         }
 
         public class CipherWithCollections : Cipher

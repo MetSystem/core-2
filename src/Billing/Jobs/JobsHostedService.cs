@@ -19,22 +19,23 @@ namespace Bit.Billing.Jobs
 
         public override async Task StartAsync(CancellationToken cancellationToken)
         {
+            var timeZone = TimeZoneInfo.FindSystemTimeZoneById("Eastern Standard Time");
+
             var everyDayAtNinePmTrigger = TriggerBuilder.Create()
                 .StartNow()
-                .WithCronSchedule("0 0 21 * * ?")
+                .WithCronSchedule("0 0 21 * * ?", x => x.InTimeZone(timeZone))
                 .Build();
 
-            Jobs = new List<Tuple<Type, ITrigger>>
-            {
-                new Tuple<Type, ITrigger>(typeof(PremiumRenewalRemindersJob), everyDayAtNinePmTrigger)
-            };
+            Jobs = new List<Tuple<Type, ITrigger>>();
+
+            // Add jobs here
 
             await base.StartAsync(cancellationToken);
         }
 
         public static void AddJobsServices(IServiceCollection services)
         {
-            services.AddTransient<PremiumRenewalRemindersJob>();
+            // Register jobs here
         }
     }
 }

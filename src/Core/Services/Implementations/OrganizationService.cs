@@ -32,7 +32,7 @@ namespace Bit.Core.Services
         private readonly IEventService _eventService;
         private readonly IInstallationRepository _installationRepository;
         private readonly IApplicationCacheService _applicationCacheService;
-        private readonly StripePaymentService _stripePaymentService;
+        private readonly IPaymentService _paymentService;
         private readonly GlobalSettings _globalSettings;
 
         public OrganizationService(
@@ -50,6 +50,7 @@ namespace Bit.Core.Services
             IEventService eventService,
             IInstallationRepository installationRepository,
             IApplicationCacheService applicationCacheService,
+            IPaymentService paymentService,
             GlobalSettings globalSettings)
         {
             _organizationRepository = organizationRepository;
@@ -66,11 +67,12 @@ namespace Bit.Core.Services
             _eventService = eventService;
             _installationRepository = installationRepository;
             _applicationCacheService = applicationCacheService;
-            _stripePaymentService = new StripePaymentService();
+            _paymentService = paymentService;
             _globalSettings = globalSettings;
         }
 
-        public async Task ReplacePaymentMethodAsync(Guid organizationId, string paymentToken)
+        public async Task ReplacePaymentMethodAsync(Guid organizationId, string paymentToken,
+            PaymentMethodType paymentMethodType)
         {
             var organization = await GetOrgById(organizationId);
             if(organization == null)
@@ -78,14 +80,15 @@ namespace Bit.Core.Services
                 throw new NotFoundException();
             }
 
-            var updated = await _stripePaymentService.UpdatePaymentMethodAsync(organization, paymentToken);
+            var updated = await _paymentService.UpdatePaymentMethodAsync(organization,
+                paymentMethodType, paymentToken);
             if(updated)
             {
                 await ReplaceAndUpdateCache(organization);
             }
         }
 
-        public async Task CancelSubscriptionAsync(Guid organizationId, bool endOfPeriod = false)
+        public async Task CancelSubscriptionAsync(Guid organizationId, bool? endOfPeriod = null)
         {
             var organization = await GetOrgById(organizationId);
             if(organization == null)
@@ -93,7 +96,14 @@ namespace Bit.Core.Services
                 throw new NotFoundException();
             }
 
-            await _stripePaymentService.CancelSubscriptionAsync(organization, endOfPeriod);
+            var eop = endOfPeriod.GetValueOrDefault(true);
+            if(!endOfPeriod.HasValue && organization.ExpirationDate.HasValue &&
+                organization.ExpirationDate.Value < DateTime.UtcNow)
+            {
+                eop = false;
+            }
+
+            await _paymentService.CancelSubscriptionAsync(organization, eop);
         }
 
         public async Task ReinstateSubscriptionAsync(Guid organizationId)
@@ -104,7 +114,7 @@ namespace Bit.Core.Services
                 throw new NotFoundException();
             }
 
-            await _stripePaymentService.ReinstateSubscriptionAsync(organization);
+            await _paymentService.ReinstateSubscriptionAsync(organization);
         }
 
         public async Task UpgradePlanAsync(Guid organizationId, PlanType plan, int additionalSeats)
@@ -179,14 +189,15 @@ namespace Bit.Core.Services
 
             // TODO: Groups?
 
-            var subscriptionService = new StripeSubscriptionService();
+            var subscriptionService = new Stripe.SubscriptionService();
             if(string.IsNullOrWhiteSpace(organization.GatewaySubscriptionId))
             {
                 // They must have been on a free plan. Create new sub.
-                var subCreateOptions = new StripeSubscriptionCreateOptions
+                var subCreateOptions = new SubscriptionCreateOptions
                 {
+                    CustomerId = organization.GatewayCustomerId,
                     TrialPeriodDays = newPlan.TrialPeriodDays,
-                    Items = new List<StripeSubscriptionItemOption>(),
+                    Items = new List<SubscriptionItemOption>(),
                     Metadata = new Dictionary<string, string> {
                         { "organizationId", organization.Id.ToString() }
                     }
@@ -194,7 +205,7 @@ namespace Bit.Core.Services
 
                 if(newPlan.StripePlanId != null)
                 {
-                    subCreateOptions.Items.Add(new StripeSubscriptionItemOption
+                    subCreateOptions.Items.Add(new SubscriptionItemOption
                     {
                         PlanId = newPlan.StripePlanId,
                         Quantity = 1
@@ -203,26 +214,26 @@ namespace Bit.Core.Services
 
                 if(additionalSeats > 0 && newPlan.StripeSeatPlanId != null)
                 {
-                    subCreateOptions.Items.Add(new StripeSubscriptionItemOption
+                    subCreateOptions.Items.Add(new SubscriptionItemOption
                     {
                         PlanId = newPlan.StripeSeatPlanId,
                         Quantity = additionalSeats
                     });
                 }
 
-                await subscriptionService.CreateAsync(organization.GatewayCustomerId, subCreateOptions);
+                await subscriptionService.CreateAsync(subCreateOptions);
             }
             else
             {
                 // Update existing sub.
-                var subUpdateOptions = new StripeSubscriptionUpdateOptions
+                var subUpdateOptions = new SubscriptionUpdateOptions
                 {
-                    Items = new List<StripeSubscriptionItemUpdateOption>()
+                    Items = new List<SubscriptionItemUpdateOption>()
                 };
 
                 if(newPlan.StripePlanId != null)
                 {
-                    subUpdateOptions.Items.Add(new StripeSubscriptionItemUpdateOption
+                    subUpdateOptions.Items.Add(new SubscriptionItemUpdateOption
                     {
                         PlanId = newPlan.StripePlanId,
                         Quantity = 1
@@ -231,7 +242,7 @@ namespace Bit.Core.Services
 
                 if(additionalSeats > 0 && newPlan.StripeSeatPlanId != null)
                 {
-                    subUpdateOptions.Items.Add(new StripeSubscriptionItemUpdateOption
+                    subUpdateOptions.Items.Add(new SubscriptionItemUpdateOption
                     {
                         PlanId = newPlan.StripeSeatPlanId,
                         Quantity = additionalSeats
@@ -263,8 +274,8 @@ namespace Bit.Core.Services
                 throw new BadRequestException("Plan does not allow additional storage.");
             }
 
-            await BillingHelpers.AdjustStorageAsync(_stripePaymentService, organization, storageAdjustmentGb,
-                plan.StripStoragePlanId);
+            await BillingHelpers.AdjustStorageAsync(_paymentService, organization, storageAdjustmentGb,
+                plan.StripeStoragePlanId);
             await ReplaceAndUpdateCache(organization);
         }
 
@@ -325,44 +336,74 @@ namespace Bit.Core.Services
                 }
             }
 
-            var subscriptionItemService = new StripeSubscriptionItemService();
-            var subscriptionService = new StripeSubscriptionService();
+            var subscriptionItemService = new SubscriptionItemService();
+            var subscriptionService = new SubscriptionService();
             var sub = await subscriptionService.GetAsync(organization.GatewaySubscriptionId);
             if(sub == null)
             {
                 throw new BadRequestException("Subscription not found.");
             }
 
+            Func<bool, Task<SubscriptionItem>> subUpdateAction = null;
             var seatItem = sub.Items?.Data?.FirstOrDefault(i => i.Plan.Id == plan.StripeSeatPlanId);
+            var subItemOptions = sub.Items.Where(i => i.Plan.Id != plan.StripeSeatPlanId)
+                .Select(i => new InvoiceSubscriptionItemOptions
+                {
+                    Id = i.Id,
+                    PlanId = i.Plan.Id,
+                    Quantity = i.Quantity,
+                }).ToList();
+
             if(additionalSeats > 0 && seatItem == null)
             {
-                await subscriptionItemService.CreateAsync(new StripeSubscriptionItemCreateOptions
+                subItemOptions.Add(new InvoiceSubscriptionItemOptions
                 {
                     PlanId = plan.StripeSeatPlanId,
                     Quantity = additionalSeats,
-                    Prorate = true,
-                    SubscriptionId = sub.Id
                 });
+                subUpdateAction = (prorate) => subscriptionItemService.CreateAsync(
+                    new SubscriptionItemCreateOptions
+                    {
+                        PlanId = plan.StripeSeatPlanId,
+                        Quantity = additionalSeats,
+                        Prorate = prorate,
+                        SubscriptionId = sub.Id
+                    });
             }
             else if(additionalSeats > 0 && seatItem != null)
             {
-                await subscriptionItemService.UpdateAsync(seatItem.Id, new StripeSubscriptionItemUpdateOptions
+                subItemOptions.Add(new InvoiceSubscriptionItemOptions
                 {
+                    Id = seatItem.Id,
                     PlanId = plan.StripeSeatPlanId,
                     Quantity = additionalSeats,
-                    Prorate = true
                 });
+                subUpdateAction = (prorate) => subscriptionItemService.UpdateAsync(seatItem.Id,
+                    new SubscriptionItemUpdateOptions
+                    {
+                        PlanId = plan.StripeSeatPlanId,
+                        Quantity = additionalSeats,
+                        Prorate = prorate
+                    });
             }
             else if(seatItem != null && additionalSeats == 0)
             {
-                await subscriptionItemService.DeleteAsync(seatItem.Id);
+                subItemOptions.Add(new InvoiceSubscriptionItemOptions
+                {
+                    Id = seatItem.Id,
+                    Deleted = true
+                });
+                subUpdateAction = (prorate) => subscriptionItemService.DeleteAsync(seatItem.Id);
             }
 
+            var invoicedNow = false;
             if(additionalSeats > 0)
             {
-                await _stripePaymentService.PreviewUpcomingInvoiceAndPayAsync(organization, plan.StripeSeatPlanId, 500);
+                invoicedNow = await (_paymentService as StripePaymentService).PreviewUpcomingInvoiceAndPayAsync(
+                    organization, plan.StripeSeatPlanId, subItemOptions, 500);
             }
 
+            await subUpdateAction(!invoicedNow);
             organization.Seats = (short?)newSeatTotal;
             await ReplaceAndUpdateCache(organization);
         }
@@ -381,7 +422,7 @@ namespace Bit.Core.Services
             }
 
             var bankService = new BankAccountService();
-            var customerService = new StripeCustomerService();
+            var customerService = new CustomerService();
             var customer = await customerService.GetAsync(organization.GatewayCustomerId);
             if(customer == null)
             {
@@ -389,7 +430,7 @@ namespace Bit.Core.Services
             }
 
             var bankAccount = customer.Sources
-                    .FirstOrDefault(s => s.BankAccount != null && s.BankAccount.Status != "verified")?.BankAccount;
+                    .FirstOrDefault(s => s is BankAccount && ((BankAccount)s).Status != "verified") as BankAccount;
             if(bankAccount == null)
             {
                 throw new GatewayException("Cannot find an unverified bank account.");
@@ -398,7 +439,7 @@ namespace Bit.Core.Services
             try
             {
                 var result = await bankService.VerifyAsync(organization.GatewayCustomerId, bankAccount.Id,
-                    new BankAccountVerifyOptions { AmountOne = amount1, AmountTwo = amount2 });
+                    new BankAccountVerifyOptions { Amounts = new List<long> { amount1, amount2 } });
                 if(result.Status != "verified")
                 {
                     throw new GatewayException("Unable to verify account.");
@@ -423,9 +464,24 @@ namespace Bit.Core.Services
                 throw new BadRequestException("Plan does not allow additional storage.");
             }
 
+            if(signup.AdditionalStorageGb < 0)
+            {
+                throw new BadRequestException("You can't subtract storage!");
+            }
+
+            if(!plan.CanBuyPremiumAccessAddon && signup.PremiumAccessAddon)
+            {
+                throw new BadRequestException("This plan does not allow you to buy the premium access addon.");
+            }
+
             if(plan.BaseSeats + signup.AdditionalSeats <= 0)
             {
                 throw new BadRequestException("You do not have any seats!");
+            }
+
+            if(signup.AdditionalSeats < 0)
+            {
+                throw new BadRequestException("You can't subtract seats!");
             }
 
             if(!plan.CanBuyAdditionalSeats && signup.AdditionalSeats > 0)
@@ -440,13 +496,34 @@ namespace Bit.Core.Services
                     $"{plan.MaxAdditionalSeats.GetValueOrDefault(0)} additional users.");
             }
 
-            var customerService = new StripeCustomerService();
-            var subscriptionService = new StripeSubscriptionService();
-            StripeCustomer customer = null;
-            StripeSubscription subscription = null;
-
-            // Pre-generate the org id so that we can save it with the Stripe subscription..
-            Guid newOrgId = CoreHelpers.GenerateComb();
+            var organization = new Organization
+            {
+                // Pre-generate the org id so that we can save it with the Stripe subscription..
+                Id = CoreHelpers.GenerateComb(),
+                Name = signup.Name,
+                BillingEmail = signup.BillingEmail,
+                BusinessName = signup.BusinessName,
+                PlanType = plan.Type,
+                Seats = (short)(plan.BaseSeats + signup.AdditionalSeats),
+                MaxCollections = plan.MaxCollections,
+                MaxStorageGb = !plan.MaxStorageGb.HasValue ?
+                    (short?)null : (short)(plan.MaxStorageGb.Value + signup.AdditionalStorageGb),
+                UseGroups = plan.UseGroups,
+                UseEvents = plan.UseEvents,
+                UseDirectory = plan.UseDirectory,
+                UseTotp = plan.UseTotp,
+                Use2fa = plan.Use2fa,
+                UseApi = plan.UseApi,
+                SelfHost = plan.SelfHost,
+                UsersGetPremium = plan.UsersGetPremium || signup.PremiumAccessAddon,
+                Plan = plan.Name,
+                Gateway = null,
+                Enabled = true,
+                LicenseKey = CoreHelpers.SecureRandomString(20),
+                ApiKey = CoreHelpers.SecureRandomString(30),
+                CreationDate = DateTime.UtcNow,
+                RevisionDate = DateTime.UtcNow
+            };
 
             if(plan.Type == PlanType.Free)
             {
@@ -459,93 +536,10 @@ namespace Bit.Core.Services
             }
             else
             {
-                customer = await customerService.CreateAsync(new StripeCustomerCreateOptions
-                {
-                    Description = signup.BusinessName,
-                    Email = signup.BillingEmail,
-                    SourceToken = signup.PaymentToken
-                });
-
-                var subCreateOptions = new StripeSubscriptionCreateOptions
-                {
-                    TrialPeriodDays = plan.TrialPeriodDays,
-                    Items = new List<StripeSubscriptionItemOption>(),
-                    Metadata = new Dictionary<string, string> {
-                        { "organizationId", newOrgId.ToString() }
-                    }
-                };
-
-                if(plan.StripePlanId != null)
-                {
-                    subCreateOptions.Items.Add(new StripeSubscriptionItemOption
-                    {
-                        PlanId = plan.StripePlanId,
-                        Quantity = 1
-                    });
-                }
-
-                if(signup.AdditionalSeats > 0 && plan.StripeSeatPlanId != null)
-                {
-                    subCreateOptions.Items.Add(new StripeSubscriptionItemOption
-                    {
-                        PlanId = plan.StripeSeatPlanId,
-                        Quantity = signup.AdditionalSeats
-                    });
-                }
-
-                if(signup.AdditionalStorageGb > 0)
-                {
-                    subCreateOptions.Items.Add(new StripeSubscriptionItemOption
-                    {
-                        PlanId = plan.StripStoragePlanId,
-                        Quantity = signup.AdditionalStorageGb
-                    });
-                }
-
-                try
-                {
-                    subscription = await subscriptionService.CreateAsync(customer.Id, subCreateOptions);
-                }
-                catch(StripeException)
-                {
-                    if(customer != null)
-                    {
-                        await customerService.DeleteAsync(customer.Id);
-                    }
-
-                    throw;
-                }
+                await _paymentService.PurchaseOrganizationAsync(organization, signup.PaymentMethodType.Value,
+                    signup.PaymentToken, plan, signup.AdditionalStorageGb, signup.AdditionalSeats,
+                    signup.PremiumAccessAddon);
             }
-
-            var organization = new Organization
-            {
-                Id = newOrgId,
-                Name = signup.Name,
-                BillingEmail = signup.BillingEmail,
-                BusinessName = signup.BusinessName,
-                BusinessCountry = signup.BusinessCountry,
-                PlanType = plan.Type,
-                Seats = (short)(plan.BaseSeats + signup.AdditionalSeats),
-                MaxCollections = plan.MaxCollections,
-                MaxStorageGb = !plan.MaxStorageGb.HasValue ?
-                    (short?)null : (short)(plan.MaxStorageGb.Value + signup.AdditionalStorageGb),
-                UseGroups = plan.UseGroups,
-                UseEvents = plan.UseEvents,
-                UseDirectory = plan.UseDirectory,
-                UseTotp = plan.UseTotp,
-                Use2fa = plan.Use2fa,
-                SelfHost = plan.SelfHost,
-                UsersGetPremium = plan.UsersGetPremium,
-                Plan = plan.Name,
-                Gateway = plan.Type == PlanType.Free ? null : (GatewayType?)GatewayType.Stripe,
-                GatewayCustomerId = customer?.Id,
-                GatewaySubscriptionId = subscription?.Id,
-                Enabled = true,
-                ExpirationDate = subscription?.CurrentPeriodEnd,
-                LicenseKey = CoreHelpers.SecureRandomString(20),
-                CreationDate = DateTime.UtcNow,
-                RevisionDate = DateTime.UtcNow
-            };
 
             return await SignUpAsync(organization, signup.Owner.Id, signup.OwnerKey, signup.CollectionName, true);
         }
@@ -590,6 +584,7 @@ namespace Bit.Core.Services
                 UseEvents = license.UseEvents,
                 UseTotp = license.UseTotp,
                 Use2fa = license.Use2fa,
+                UseApi = license.UseApi,
                 Plan = license.Plan,
                 SelfHost = license.SelfHost,
                 UsersGetPremium = license.UsersGetPremium,
@@ -599,6 +594,7 @@ namespace Bit.Core.Services
                 Enabled = license.Enabled,
                 ExpirationDate = license.Expires,
                 LicenseKey = license.LicenseKey,
+                ApiKey = CoreHelpers.SecureRandomString(30),
                 CreationDate = DateTime.UtcNow,
                 RevisionDate = DateTime.UtcNow
             };
@@ -607,17 +603,8 @@ namespace Bit.Core.Services
 
             var dir = $"{_globalSettings.LicenseDirectory}/organization";
             Directory.CreateDirectory(dir);
-            File.WriteAllText($"{dir}/{organization.Id}.json", JsonConvert.SerializeObject(license, Formatting.Indented));
-
-            // self-hosted org users get premium access on some plans
-            if(organization.UsersGetPremium && !owner.Premium && result.Item1.Enabled)
-            {
-                owner.Premium = true;
-                owner.MaxStorageGb = 10240; // 10 TB
-                owner.RevisionDate = DateTime.UtcNow;
-                await _userRepository.ReplaceAsync(owner);
-            }
-
+            System.IO.File.WriteAllText($"{dir}/{organization.Id}.json",
+                JsonConvert.SerializeObject(license, Formatting.Indented));
             return result;
         }
 
@@ -666,7 +653,7 @@ namespace Bit.Core.Services
             {
                 if(withPayment)
                 {
-                    await _stripePaymentService.CancelAndRecoverChargesAsync(organization);
+                    await _paymentService.CancelAndRecoverChargesAsync(organization);
                 }
 
                 if(organization.Id != default(Guid))
@@ -743,7 +730,8 @@ namespace Bit.Core.Services
 
             var dir = $"{_globalSettings.LicenseDirectory}/organization";
             Directory.CreateDirectory(dir);
-            File.WriteAllText($"{dir}/{organization.Id}.json", JsonConvert.SerializeObject(license, Formatting.Indented));
+            System.IO.File.WriteAllText($"{dir}/{organization.Id}.json",
+                JsonConvert.SerializeObject(license, Formatting.Indented));
 
             organization.Name = license.Name;
             organization.BusinessName = license.BusinessName;
@@ -756,6 +744,7 @@ namespace Bit.Core.Services
             organization.UseEvents = license.UseEvents;
             organization.UseTotp = license.UseTotp;
             organization.Use2fa = license.Use2fa;
+            organization.UseApi = license.UseApi;
             organization.SelfHost = license.SelfHost;
             organization.UsersGetPremium = license.UsersGetPremium;
             organization.Plan = license.Plan;
@@ -772,7 +761,9 @@ namespace Bit.Core.Services
             {
                 try
                 {
-                    await _stripePaymentService.CancelSubscriptionAsync(organization, true);
+                    var eop = !organization.ExpirationDate.HasValue ||
+                        organization.ExpirationDate.Value >= DateTime.UtcNow;
+                    await _paymentService.CancelSubscriptionAsync(organization, eop);
                 }
                 catch(GatewayException) { }
             }
@@ -827,8 +818,8 @@ namespace Bit.Core.Services
 
             if(updateBilling && !string.IsNullOrWhiteSpace(organization.GatewayCustomerId))
             {
-                var customerService = new StripeCustomerService();
-                await customerService.UpdateAsync(organization.GatewayCustomerId, new StripeCustomerUpdateOptions
+                var customerService = new CustomerService();
+                await customerService.UpdateAsync(organization.GatewayCustomerId, new CustomerUpdateOptions
                 {
                     Email = organization.BillingEmail,
                     Description = organization.BusinessName
@@ -838,7 +829,7 @@ namespace Bit.Core.Services
 
         public async Task UpdateTwoFactorProviderAsync(Organization organization, TwoFactorProviderType type)
         {
-            if(!type.ToString().StartsWith("Organization"))
+            if(!type.ToString().Contains("Organization"))
             {
                 throw new ArgumentException("Not an organization provider type.");
             }
@@ -861,7 +852,7 @@ namespace Bit.Core.Services
 
         public async Task DisableTwoFactorProviderAsync(Organization organization, TwoFactorProviderType type)
         {
-            if(!type.ToString().StartsWith("Organization"))
+            if(!type.ToString().Contains("Organization"))
             {
                 throw new ArgumentException("Not an organization provider type.");
             }
@@ -880,9 +871,14 @@ namespace Bit.Core.Services
         public async Task<OrganizationUser> InviteUserAsync(Guid organizationId, Guid? invitingUserId, string email,
             OrganizationUserType type, bool accessAll, string externalId, IEnumerable<SelectionReadOnly> collections)
         {
-            var result = await InviteUserAsync(organizationId, invitingUserId, new List<string> { email }, type, accessAll,
+            var results = await InviteUserAsync(organizationId, invitingUserId, new List<string> { email }, type, accessAll,
                 externalId, collections);
-            return result.FirstOrDefault();
+            var result = results.FirstOrDefault();
+            if(result == null)
+            {
+                throw new BadRequestException("This user has already been invited.");
+            }
+            return result;
         }
 
         public async Task<List<OrganizationUser>> InviteUserAsync(Guid organizationId, Guid? invitingUserId,
@@ -1063,15 +1059,6 @@ namespace Bit.Core.Services
             var user = await _userRepository.GetByIdAsync(orgUser.UserId.Value);
             await _mailService.SendOrganizationConfirmedEmailAsync(org.Name, user.Email);
 
-            // self-hosted org users get premium access
-            if(_globalSettings.SelfHosted && !user.Premium && org.UsersGetPremium && org.Enabled)
-            {
-                user.Premium = true;
-                user.MaxStorageGb = 10240; // 10 TB
-                user.RevisionDate = DateTime.UtcNow;
-                await _userRepository.ReplaceAsync(user);
-            }
-
             // push
             var deviceIds = await GetUserDeviceIdsAsync(orgUser.UserId.Value);
             await _pushRegistrationService.AddUserRegistrationOrganizationAsync(deviceIds, organizationId.ToString());
@@ -1080,16 +1067,17 @@ namespace Bit.Core.Services
             return orgUser;
         }
 
-        public async Task SaveUserAsync(OrganizationUser user, Guid savingUserId, IEnumerable<SelectionReadOnly> collections)
+        public async Task SaveUserAsync(OrganizationUser user, Guid? savingUserId,
+            IEnumerable<SelectionReadOnly> collections)
         {
             if(user.Id.Equals(default(Guid)))
             {
                 throw new BadRequestException("Invite the user first.");
             }
 
-            if(user.Type == OrganizationUserType.Owner)
+            if(savingUserId.HasValue && user.Type == OrganizationUserType.Owner)
             {
-                var savingUserOrgs = await _organizationUserRepository.GetManyByUserAsync(savingUserId);
+                var savingUserOrgs = await _organizationUserRepository.GetManyByUserAsync(savingUserId.Value);
                 if(!savingUserOrgs.Any(u => u.OrganizationId == user.OrganizationId && u.Type == OrganizationUserType.Owner))
                 {
                     throw new BadRequestException("Only owners can update other owners.");
@@ -1202,9 +1190,8 @@ namespace Bit.Core.Services
                 throw new BadRequestException("Invalid installation id");
             }
 
-            var paymentService = new StripePaymentService();
-            var billingInfo = await paymentService.GetBillingAsync(organization);
-            return new OrganizationLicense(organization, billingInfo, installationId, _licensingService);
+            var subInfo = await _paymentService.GetSubscriptionAsync(organization);
+            return new OrganizationLicense(organization, subInfo, installationId, _licensingService);
         }
 
         public async Task ImportAsync(Guid organizationId,
@@ -1358,6 +1345,13 @@ namespace Bit.Core.Services
                     }
                 }
             }
+        }
+
+        public async Task RotateApiKeyAsync(Organization organization)
+        {
+            organization.ApiKey = CoreHelpers.SecureRandomString(30);
+            organization.RevisionDate = DateTime.UtcNow;
+            await ReplaceAndUpdateCache(organization);
         }
 
         private async Task UpdateUsersAsync(Group group, HashSet<string> groupUsers,

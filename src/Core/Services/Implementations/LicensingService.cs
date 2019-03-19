@@ -69,7 +69,7 @@ namespace Bit.Core.Services
 
             foreach(var org in enabledOrgs)
             {
-                var license = ReadOrganiztionLicense(org);
+                var license = ReadOrganizationLicense(org);
                 if(license == null)
                 {
                     await DisableOrganizationAsync(org, null, "No license file.");
@@ -80,16 +80,19 @@ namespace Bit.Core.Services
                 if(totalLicensedOrgs > 1)
                 {
                     await DisableOrganizationAsync(org, license, "Multiple organizations.");
+                    continue;
                 }
 
                 if(!license.VerifyData(org, _globalSettings))
                 {
                     await DisableOrganizationAsync(org, license, "Invalid data.");
+                    continue;
                 }
 
                 if(!license.VerifySignature(_certificate))
                 {
                     await DisableOrganizationAsync(org, license, "Invalid signature.");
+                    continue;
                 }
             }
         }
@@ -119,28 +122,6 @@ namespace Bit.Core.Services
             foreach(var user in premiumUsers)
             {
                 await ProcessUserValidationAsync(user);
-            }
-
-            var nonPremiumUsers = await _userRepository.GetManyByPremiumAsync(false);
-            _logger.LogInformation(Constants.BypassFiltersEventId, null,
-                "Checking to restore premium for {0} users.", nonPremiumUsers.Count);
-
-            foreach(var user in nonPremiumUsers)
-            {
-                var details = await _organizationUserRepository.GetManyDetailsByUserAsync(user.Id);
-                if(details.Any(d => d.SelfHost && d.UsersGetPremium && d.Enabled))
-                {
-                    _logger.LogInformation(Constants.BypassFiltersEventId, null,
-                        "Granting premium to user {0}({1}) because they are in an active organization " +
-                        "with premium features.", user.Id, user.Email);
-
-                    user.Premium = true;
-                    user.MaxStorageGb = 10240; // 10 TB
-                    user.RevisionDate = DateTime.UtcNow;
-                    user.PremiumExpirationDate = null;
-                    user.LicenseKey = null;
-                    await _userRepository.ReplaceAsync(user);
-                }
             }
         }
 
@@ -183,35 +164,37 @@ namespace Bit.Core.Services
         private async Task<bool> ProcessUserValidationAsync(User user)
         {
             var license = ReadUserLicense(user);
-            var valid = license != null && license.VerifyData(user) && license.VerifySignature(_certificate);
-
-            if(!valid)
+            if(license == null)
             {
-                var details = await _organizationUserRepository.GetManyDetailsByUserAsync(user.Id);
-                valid = details.Any(d => d.SelfHost && d.UsersGetPremium && d.Enabled);
-
-                if(valid && (!string.IsNullOrWhiteSpace(user.LicenseKey) || user.PremiumExpirationDate.HasValue))
-                {
-                    // user used to be on a license but is now part of a organization that gives them premium.
-                    // update the record.
-                    user.PremiumExpirationDate = null;
-                    user.LicenseKey = null;
-                    await _userRepository.ReplaceAsync(user);
-                }
+                await DisablePremiumAsync(user, null, "No license file.");
+                return false;
             }
 
-            if(!valid)
+            if(!license.VerifyData(user))
             {
-                _logger.LogInformation(Constants.BypassFiltersEventId, null,
-                    "User {0}({1}) has an invalid license and premium is being disabled.", user.Id, user.Email);
-
-                user.Premium = false;
-                user.PremiumExpirationDate = license?.Expires ?? DateTime.UtcNow;
-                user.RevisionDate = DateTime.UtcNow;
-                await _userRepository.ReplaceAsync(user);
+                await DisablePremiumAsync(user, license, "Invalid data.");
+                return false;
             }
 
-            return valid;
+            if(!license.VerifySignature(_certificate))
+            {
+                await DisablePremiumAsync(user, license, "Invalid signature.");
+                return false;
+            }
+
+            return true;
+        }
+
+        private async Task DisablePremiumAsync(User user, ILicense license, string reason)
+        {
+            _logger.LogInformation(Constants.BypassFiltersEventId, null,
+                "User {0}({1}) has an invalid license and premium is being disabled. Reason: {2}",
+                user.Id, user.Email, reason);
+
+            user.Premium = false;
+            user.PremiumExpirationDate = license?.Expires ?? DateTime.UtcNow;
+            user.RevisionDate = DateTime.UtcNow;
+            await _userRepository.ReplaceAsync(user);
         }
 
         public bool VerifyLicense(ILicense license)
@@ -241,7 +224,7 @@ namespace Bit.Core.Services
             return JsonConvert.DeserializeObject<UserLicense>(data);
         }
 
-        private OrganizationLicense ReadOrganiztionLicense(Organization organization)
+        private OrganizationLicense ReadOrganizationLicense(Organization organization)
         {
             var filePath = $"{_globalSettings.LicenseDirectory}/organization/{organization.Id}.json";
             if(!File.Exists(filePath))

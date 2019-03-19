@@ -11,6 +11,8 @@ namespace Bit.Setup
         private const string ConfigPath = "/bitwarden/config.yml";
 
         public string[] Args { get; set; }
+        public bool Quiet { get; set; }
+        public bool Stub { get; set; }
         public IDictionary<string, string> Parameters { get; set; }
         public string OutputDir { get; set; } = "/etc/bitwarden";
         public string HostOS { get; set; } = "win";
@@ -19,22 +21,27 @@ namespace Bit.Setup
         public Installation Install { get; set; } = new Installation();
         public Configuration Config { get; set; } = new Configuration();
 
+        public bool PrintToScreen()
+        {
+            return !Quiet || Parameters.ContainsKey("install");
+        }
+
         public void LoadConfiguration()
         {
             if(!File.Exists(ConfigPath))
             {
-                Console.WriteLine("No existing `config.yml` detected. Let's generate one.");
+                Helpers.WriteLine(this, "No existing `config.yml` detected. Let's generate one.");
 
                 // Looks like updating from older version. Try to create config file.
-                var url = Helpers.GetValueFronEnvFile("global", "globalSettings__baseServiceUri__vault");
+                var url = Helpers.GetValueFromEnvFile("global", "globalSettings__baseServiceUri__vault");
                 if(!Uri.TryCreate(url, UriKind.Absolute, out var uri))
                 {
-                    Console.WriteLine("Unable to determine existing installation url.");
+                    Helpers.WriteLine(this, "Unable to determine existing installation url.");
                     return;
                 }
                 Config.Url = url;
 
-                var push = Helpers.GetValueFronEnvFile("global", "globalSettings__pushRelayBaseUri");
+                var push = Helpers.GetValueFromEnvFile("global", "globalSettings__pushRelayBaseUri");
                 Config.PushNotifications = push != "REPLACE";
 
                 var composeFile = "/bitwarden/docker/docker-compose.yml";

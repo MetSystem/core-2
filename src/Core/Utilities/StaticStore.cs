@@ -26,11 +26,11 @@ namespace Bit.Core.Utilities
             GlobalDomains.Add(GlobalEquivalentDomainsType.United, new List<string> { "ua2go.com", "ual.com", "united.com", "unitedwifi.com" });
             GlobalDomains.Add(GlobalEquivalentDomainsType.Yahoo, new List<string> { "overture.com", "yahoo.com", "flickr.com" });
             GlobalDomains.Add(GlobalEquivalentDomainsType.Zonelabs, new List<string> { "zonealarm.com", "zonelabs.com" });
-            GlobalDomains.Add(GlobalEquivalentDomainsType.Paypal, new List<string> { "paypal.com", "paypal-search.com" });
+            GlobalDomains.Add(GlobalEquivalentDomainsType.PayPal, new List<string> { "paypal.com", "paypal-search.com" });
             GlobalDomains.Add(GlobalEquivalentDomainsType.Avon, new List<string> { "avon.com", "youravon.com" });
             GlobalDomains.Add(GlobalEquivalentDomainsType.Diapers, new List<string> { "diapers.com", "soap.com", "wag.com", "yoyo.com", "beautybar.com", "casa.com", "afterschool.com", "vine.com", "bookworm.com", "look.com", "vinemarket.com" });
             GlobalDomains.Add(GlobalEquivalentDomainsType.Contacts, new List<string> { "1800contacts.com", "800contacts.com" });
-            GlobalDomains.Add(GlobalEquivalentDomainsType.Amazon, new List<string> { "amazon.com", "amazon.co.uk", "amazon.ca", "amazon.de", "amazon.fr", "amazon.es", "amazon.it", "amazon.com.au", "amazon.co.nz", "amazon.co.jp", "amazon.in" });
+            GlobalDomains.Add(GlobalEquivalentDomainsType.Amazon, new List<string> { "amazon.com", "amazon.co.uk", "amazon.ca", "amazon.de", "amazon.fr", "amazon.es", "amazon.it", "amazon.com.au", "amazon.co.nz", "amazon.in" });
             GlobalDomains.Add(GlobalEquivalentDomainsType.Cox, new List<string> { "cox.com", "cox.net", "coxbusiness.com" });
             GlobalDomains.Add(GlobalEquivalentDomainsType.Norton, new List<string> { "mynortonaccount.com", "norton.com" });
             GlobalDomains.Add(GlobalEquivalentDomainsType.Verizon, new List<string> { "verizon.com", "verizon.net" });
@@ -108,9 +108,11 @@ namespace Bit.Core.Utilities
                     BaseSeats = 5,
                     BasePrice = 12,
                     CanBuyAdditionalSeats = false,
+                    CanBuyPremiumAccessAddon = true,
                     Name = "Families",
                     StripePlanId = "personal-org-annually",
-                    StripStoragePlanId = "storage-gb-annually",
+                    StripeStoragePlanId = "storage-gb-annually",
+                    StripePremiumAccessPlanId = "personal-org-premium-access-annually",
                     UpgradeSortOrder = 1,
                     TrialPeriodDays = 7,
                     UseTotp = true,
@@ -127,7 +129,7 @@ namespace Bit.Core.Utilities
                     Name = "Teams (Monthly)",
                     StripePlanId = "teams-org-monthly",
                     StripeSeatPlanId = "teams-org-seat-monthly",
-                    StripStoragePlanId = "storage-gb-monthly",
+                    StripeStoragePlanId = "storage-gb-monthly",
                     UpgradeSortOrder = 2,
                     TrialPeriodDays = 7,
                     UseTotp = true,
@@ -143,7 +145,7 @@ namespace Bit.Core.Utilities
                     Name = "Teams (Annually)",
                     StripePlanId = "teams-org-annually",
                     StripeSeatPlanId = "teams-org-seat-annually",
-                    StripStoragePlanId = "storage-gb-annually",
+                    StripeStoragePlanId = "storage-gb-annually",
                     UpgradeSortOrder = 2,
                     TrialPeriodDays = 7,
                     UseTotp = true,
@@ -159,7 +161,7 @@ namespace Bit.Core.Utilities
                     Name = "Enterprise (Monthly)",
                     StripePlanId = null,
                     StripeSeatPlanId = "enterprise-org-seat-monthly",
-                    StripStoragePlanId = "storage-gb-monthly",
+                    StripeStoragePlanId = "storage-gb-monthly",
                     UpgradeSortOrder = 3,
                     TrialPeriodDays = 7,
                     UseGroups = true,
@@ -167,6 +169,7 @@ namespace Bit.Core.Utilities
                     UseEvents = true,
                     UseTotp = true,
                     Use2fa = true,
+                    UseApi = true,
                     MaxStorageGb = 1,
                     SelfHost = true,
                     UsersGetPremium = true
@@ -181,7 +184,7 @@ namespace Bit.Core.Utilities
                     Name = "Enterprise (Annually)",
                     StripePlanId = null,
                     StripeSeatPlanId = "enterprise-org-seat-annually",
-                    StripStoragePlanId = "storage-gb-annually",
+                    StripeStoragePlanId = "storage-gb-annually",
                     UpgradeSortOrder = 3,
                     TrialPeriodDays = 7,
                     UseGroups = true,
@@ -189,6 +192,7 @@ namespace Bit.Core.Utilities
                     UseEvents = true,
                     UseTotp = true,
                     Use2fa = true,
+                    UseApi = true,
                     MaxStorageGb = 1,
                     SelfHost = true,
                     UsersGetPremium = true

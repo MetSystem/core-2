@@ -16,11 +16,11 @@ namespace Bit.Core.Repositories.SqlServer
     public class OrganizationUserRepository : Repository<OrganizationUser, Guid>, IOrganizationUserRepository
     {
         public OrganizationUserRepository(GlobalSettings globalSettings)
-            : this(globalSettings.SqlServer.ConnectionString)
+            : this(globalSettings.SqlServer.ConnectionString, globalSettings.SqlServer.ReadOnlyConnectionString)
         { }
 
-        public OrganizationUserRepository(string connectionString)
-            : base(connectionString)
+        public OrganizationUserRepository(string connectionString, string readOnlyConnectionString)
+            : base(connectionString, readOnlyConnectionString)
         { }
 
         public async Task<int> GetCountByOrganizationIdAsync(Guid organizationId)
@@ -127,6 +127,34 @@ namespace Bit.Core.Repositories.SqlServer
                 var user = (await results.ReadAsync<OrganizationUser>()).SingleOrDefault();
                 var collections = (await results.ReadAsync<SelectionReadOnly>()).ToList();
                 return new Tuple<OrganizationUser, ICollection<SelectionReadOnly>>(user, collections);
+            }
+        }
+
+        public async Task<OrganizationUserUserDetails> GetDetailsByIdAsync(Guid id)
+        {
+            using(var connection = new SqlConnection(ConnectionString))
+            {
+                var results = await connection.QueryAsync<OrganizationUserUserDetails>(
+                    "[dbo].[OrganizationUserUserDetails_ReadById]",
+                    new { Id = id },
+                    commandType: CommandType.StoredProcedure);
+
+                return results.SingleOrDefault();
+            }
+        }
+        public async Task<Tuple<OrganizationUserUserDetails, ICollection<SelectionReadOnly>>>
+            GetDetailsByIdWithCollectionsAsync(Guid id)
+        {
+            using(var connection = new SqlConnection(ConnectionString))
+            {
+                var results = await connection.QueryMultipleAsync(
+                    "[dbo].[OrganizationUserUserDetails_ReadWithCollectionsById]",
+                    new { Id = id },
+                    commandType: CommandType.StoredProcedure);
+
+                var user = (await results.ReadAsync<OrganizationUserUserDetails>()).SingleOrDefault();
+                var collections = (await results.ReadAsync<SelectionReadOnly>()).ToList();
+                return new Tuple<OrganizationUserUserDetails, ICollection<SelectionReadOnly>>(user, collections);
             }
         }
 

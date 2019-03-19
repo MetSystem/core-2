@@ -96,10 +96,6 @@ function install() {
         --env-file $ENV_DIR/uid.env bitwarden/setup:$COREVERSION \
         dotnet Setup.dll -install 1 -domain $DOMAIN -letsencrypt $LETS_ENCRYPT -os $OS \
         -corev $COREVERSION -webv $WEBVERSION
-    
-    echo ""
-    echo "Setup complete"
-    echo ""
 }
 
 function dockerComposeUp() {
@@ -124,10 +120,12 @@ function dockerComposeFiles() {
     else
         export COMPOSE_FILE="$DOCKER_DIR/docker-compose.yml"
     fi
+    export COMPOSE_HTTP_TIMEOUT="300"
 }
 
 function dockerPrune() {
-    docker image prune -f --filter="label=com.bitwarden.product=bitwarden"
+    docker image prune --all --force --filter="label=com.bitwarden.product=bitwarden" \
+        --filter="label!=com.bitwarden.project=setup"
 }
 
 function updateLetsEncrypt() {

@@ -13,11 +13,11 @@ namespace Bit.Core.Repositories.SqlServer
     public class OrganizationRepository : Repository<Organization, Guid>, IOrganizationRepository
     {
         public OrganizationRepository(GlobalSettings globalSettings)
-            : this(globalSettings.SqlServer.ConnectionString)
+            : this(globalSettings.SqlServer.ConnectionString, globalSettings.SqlServer.ReadOnlyConnectionString)
         { }
 
-        public OrganizationRepository(string connectionString)
-            : base(connectionString)
+        public OrganizationRepository(string connectionString, string readOnlyConnectionString)
+            : base(connectionString, readOnlyConnectionString)
         { }
 
         public async Task<ICollection<Organization>> GetManyByEnabledAsync()
@@ -48,12 +48,13 @@ namespace Bit.Core.Repositories.SqlServer
         public async Task<ICollection<Organization>> SearchAsync(string name, string userEmail, bool? paid,
             int skip, int take)
         {
-            using(var connection = new SqlConnection(ConnectionString))
+            using(var connection = new SqlConnection(ReadOnlyConnectionString))
             {
                 var results = await connection.QueryAsync<Organization>(
                     "[dbo].[Organization_Search]",
                     new { Name = name, UserEmail = userEmail, Paid = paid, Skip = skip, Take = take },
-                    commandType: CommandType.StoredProcedure);
+                    commandType: CommandType.StoredProcedure,
+                    commandTimeout: 120);
 
                 return results.ToList();
             }

@@ -14,6 +14,16 @@ namespace Bit.Setup
 
         public void BuildForInstall()
         {
+            if(_context.Stub)
+            {
+                _context.Config.Ssl = true;
+                _context.Install.Trusted = true;
+                _context.Install.SelfSignedCert = false;
+                _context.Install.DiffieHellman = false;
+                _context.Install.IdentityCertPassword = "IDENTITY_CERT_PASSWORD";
+                return;
+            }
+
             _context.Config.Ssl = _context.Config.SslManagedLetsEncrypt;
 
             if(!_context.Config.Ssl)
@@ -24,12 +34,12 @@ namespace Bit.Setup
                     Directory.CreateDirectory($"/bitwarden/ssl/{_context.Install.Domain}/");
                     var message = "Make sure 'certificate.crt' and 'private.key' are provided in the \n" +
                                   "appropriate directory before running 'start' (see docs for info).";
-                    Helpers.ShowBanner("NOTE", message);
+                    Helpers.ShowBanner(_context, "NOTE", message);
                 }
                 else if(Helpers.ReadQuestion("Do you want to generate a self-signed SSL certificate?"))
                 {
                     Directory.CreateDirectory($"/bitwarden/ssl/self/{_context.Install.Domain}/");
-                    Console.WriteLine("Generating self signed SSL certificate.");
+                    Helpers.WriteLine(_context, "Generating self signed SSL certificate.");
                     _context.Config.Ssl = true;
                     _context.Install.Trusted = false;
                     _context.Install.SelfSignedCert = true;
@@ -47,7 +57,8 @@ namespace Bit.Setup
                 _context.Install.Trusted = true;
                 _context.Install.DiffieHellman = true;
                 Directory.CreateDirectory($"/bitwarden/letsencrypt/live/{_context.Install.Domain}/");
-                Helpers.Exec($"openssl dhparam -out /bitwarden/letsencrypt/live/{_context.Install.Domain}/dhparam.pem 2048");
+                Helpers.Exec($"openssl dhparam -out " +
+                    $"/bitwarden/letsencrypt/live/{_context.Install.Domain}/dhparam.pem 2048");
             }
             else if(_context.Config.Ssl && !_context.Install.SelfSignedCert)
             {
@@ -55,7 +66,7 @@ namespace Bit.Setup
                     "(requires ca.crt, see docs)?");
             }
 
-            Console.WriteLine("Generating key for IdentityServer.");
+            Helpers.WriteLine(_context, "Generating key for IdentityServer.");
             _context.Install.IdentityCertPassword = Helpers.SecureRandomString(32, alpha: true, numeric: true);
             Directory.CreateDirectory("/bitwarden/identity/");
             Helpers.Exec("openssl req -x509 -newkey rsa:4096 -sha256 -nodes -keyout identity.key " +
@@ -63,14 +74,14 @@ namespace Bit.Setup
             Helpers.Exec("openssl pkcs12 -export -out /bitwarden/identity/identity.pfx -inkey identity.key " +
                 $"-in identity.crt -certfile identity.crt -passout pass:{_context.Install.IdentityCertPassword}");
 
-            Console.WriteLine();
+            Helpers.WriteLine(_context);
 
             if(!_context.Config.Ssl)
             {
                 var message = "You are not using a SSL certificate. Bitwarden requires HTTPS to operate. \n" +
                               "You must front your installation with a HTTPS proxy or the web vault (and \n" +
                               "other Bitwarden apps) will not work properly.";
-                Helpers.ShowBanner("WARNING", message, ConsoleColor.Yellow);
+                Helpers.ShowBanner(_context, "WARNING", message, ConsoleColor.Yellow);
             }
             else if(_context.Config.Ssl && !_context.Install.Trusted)
             {
@@ -78,7 +89,7 @@ namespace Bit.Setup
                               "trusted by Bitwarden client applications. You must add this certificate to \n" +
                               "the trusted store on each device or else you will receive errors when trying \n" +
                               "to connect to your installation.";
-                Helpers.ShowBanner("WARNING", message, ConsoleColor.Yellow);
+                Helpers.ShowBanner(_context, "WARNING", message, ConsoleColor.Yellow);
             }
         }
     }

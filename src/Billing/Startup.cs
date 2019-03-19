@@ -39,6 +39,12 @@ namespace Bit.Billing
             // Repositories
             services.AddSqlServerRepositories(globalSettings);
 
+            // PayPal Client
+            services.AddSingleton<Utilities.PayPalIpnClient>();
+
+            // BitPay Client
+            services.AddSingleton<BitPayClient>();
+
             // Context
             services.AddScoped<CurrentContext>();
 
@@ -59,9 +65,9 @@ namespace Bit.Billing
             });
             services.Configure<RouteOptions>(options => options.LowercaseUrls = true);
 
-            // Jobs service
-            Jobs.JobsHostedService.AddJobsServices(services);
-            services.AddHostedService<Jobs.JobsHostedService>();
+            // Jobs service, uncomment when we have some jobs to run
+            // Jobs.JobsHostedService.AddJobsServices(services);
+            // services.AddHostedService<Jobs.JobsHostedService>();
         }
 
         public void Configure(
@@ -80,7 +86,7 @@ namespace Bit.Billing
                     return true;
                 }
 
-                return e.Level >= LogEventLevel.Error;
+                return e.Level >= LogEventLevel.Warning;
             });
 
             if(env.IsDevelopment())
